@@ -7,13 +7,16 @@
   "main": "src/main/index.js",
   "scripts": {
     "start": "electron . --no-sandbox",
-    "dist": "electron-builder --win --x64",
+    "dist": "electron-builder --win --x64 && node scripts/pack-installer-zip.js",
+    "dist:exe": "electron-builder --win --x64",
+    "zip": "node scripts/pack-installer-zip.js",
     "pack": "electron-builder --dir"
   },
   "dependencies": {
     "electron-store": "^8.2.0"
   },
   "devDependencies": {
+    "archiver": "^5.3.2",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3"
   },

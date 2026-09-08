@@ -3,6 +3,12 @@ const printQueue = require('./print-queue');
 const store = require('./config-store');
 const pkg = require('../../package.json');
 
+// Jalur cetak HTML — hanya tersedia di Windows (butuh BrowserWindow render).
+let htmlPrinter = null;
+if (process.platform === 'win32') {
+  htmlPrinter = require('./html-printer');
+}
+
 /**
  * HTTP server loopback untuk local print agent (docs/zd220-print-agent.md §3.1).
  *
@@ -87,6 +93,46 @@ async function handleRequest(req, res) {
         }
         if (msg.startsWith('invalid_zpl')) {
           return sendJson(res, 400, { error: 'invalid_zpl', message: msg });
+        }
+        return sendJson(res, 500, { error: 'internal', message: msg });
+      }
+    }
+
+    if (req.method === 'POST' && url === '/print-html') {
+      if (!htmlPrinter) {
+        return sendJson(res, 501, {
+          error: 'not_supported',
+          message: 'HTML printing is only available on Windows.',
+        });
+      }
+
+      let body;
+      try {
+        body = JSON.parse((await readBody(req)) || '{}');
+      } catch {
+        return sendJson(res, 400, { error: 'invalid_json', message: 'body is not valid JSON' });
+      }
+
+      if (typeof body.html !== 'string' || !body.html.trim()) {
+        return sendJson(res, 400, { error: 'invalid_html', message: "field 'html' is required" });
+      }
+
+      try {
+        const { printer } = await htmlPrinter.printHtml(body.html, {
+          printer: body.printer || store.get('defaultZplPrinter'),
+          copies: Number(body.copies) || 1,
+          pageSize: body.pageSize, // { width, height } dalam mikron; undefined = default printer
+          landscape: Boolean(body.landscape),
+          marginsType: body.marginsType || 'none',
+        });
+        return sendJson(res, 200, { jobId: String(Date.now()), printer });
+      } catch (err) {
+        const msg = String(err?.message ?? err);
+        if (msg.startsWith('printer_not_found')) {
+          return sendJson(res, 404, { error: 'printer_not_found', message: msg });
+        }
+        if (msg.startsWith('invalid_html')) {
+          return sendJson(res, 400, { error: 'invalid_html', message: msg });
         }
         return sendJson(res, 500, { error: 'internal', message: msg });
       }

@@ -1,4 +1,4 @@
-const { app, Tray, Menu, shell, clipboard } = require('electron');
+const { app, Tray, Menu, shell, clipboard, ipcMain } = require('electron');
 const path = require('path');
 
 // Baca .env SEBELUM config-store di-require. Sertakan folder userData sebagai
@@ -15,6 +15,7 @@ const store = require('./config-store');
 const printQueue = require('./print-queue');
 const { startHttpServer } = require('./http-server');
 const { openDsmartWindow } = require('./browser-window');
+const { openSettingsWindow, closeSettingsWindow } = require('./settings-window');
 const MockPrinterAdapter = require('./printer/mock-printer-adapter');
 const WindowsPrinterAdapter = require('./printer/windows-printer-adapter');
 
@@ -71,6 +72,11 @@ function refreshTrayMenu() {
     },
   ];
 
+  template.push({
+    label: 'Pengaturan Printer…',
+    click: () => openSettingsWindow(),
+  });
+
   if (store.get('embeddedBrowserEnabled')) {
     template.push({ label: 'Buka dsmart', click: () => openDsmartWindow() });
   }
@@ -80,6 +86,44 @@ function refreshTrayMenu() {
   tray.setContextMenu(Menu.buildFromTemplate(template));
   tray.setToolTip(`Print Agent — :${port}`);
 }
+
+// ── IPC untuk window "Pengaturan Printer" ──────────────────────────────
+// Semua channel di-whitelist di settings-preload.js. Pilihan printer disimpan
+// ke key `defaultZplPrinter` (BUKAN default printer Windows) — dipakai
+// print-queue saat job tidak menyertakan field "printer".
+
+ipcMain.handle('settings:load', async () => {
+  const printers = await printQueue.listPrinters();
+  return {
+    printers,
+    selectedPrinter: store.get('defaultZplPrinter') || null,
+  };
+});
+
+ipcMain.handle('settings:set-printer', (_evt, name) => {
+  const value = typeof name === 'string' && name.trim() ? name.trim() : null;
+  store.set('defaultZplPrinter', value);
+  console.log(`[Agent] Printer tujuan diubah lewat Settings → ${value ?? '(tidak diset)'}`);
+  refreshTrayMenu();
+  return { ok: true, selectedPrinter: value };
+});
+
+ipcMain.handle('settings:test-print', async (_evt, name) => {
+  const printer = typeof name === 'string' && name.trim() ? name.trim() : store.get('defaultZplPrinter');
+  if (!printer) throw new Error('Belum ada printer yang dipilih.');
+
+  // Label uji ZPL kecil — teks + timestamp. Printer yang menyusun layout.
+  const stamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const zpl = `^XA^CI28^PW400^LL200^FO30,30^A0N,28,28^FDPrint Agent - tes cetak^FS^FO30,80^A0N,24,24^FD${printer}^FS^FO30,130^A0N,22,22^FD${stamp}^FS^XZ`;
+
+  await printQueue.enqueuePrintJob({ type: 'zpl', data: zpl, copies: 1, printer });
+  return { ok: true, printer };
+});
+
+ipcMain.handle('settings:close', () => {
+  closeSettingsWindow();
+  return { ok: true };
+});
 
 app.whenReady().then(() => {
   // Auto-start saat login (§3.6). packaged build saja — saat dev jangan daftarkan.

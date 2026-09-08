@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'" />
+  <title>Pengaturan Printer</title>
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --card: #ffffff;
+      --border: #d6d9de;
+      --text: #1d2129;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --accent-text: #ffffff;
+      --ok: #15803d;
+      --err: #b91c1c;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1e1f22;
+        --card: #2b2d31;
+        --border: #3a3d43;
+        --text: #e8eaed;
+        --muted: #9aa0a6;
+        --accent: #3b82f6;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      font: 14px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    h1 { font-size: 16px; margin: 0 0 4px; }
+    p.sub { margin: 0 0 16px; color: var(--muted); font-size: 12px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    select, button {
+      font: inherit;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      background: var(--card);
+      color: var(--text);
+    }
+    select { flex: 1; }
+    button {
+      cursor: pointer;
+      background: var(--card);
+      white-space: nowrap;
+    }
+    button.primary {
+      background: var(--accent);
+      color: var(--accent-text);
+      border-color: var(--accent);
+    }
+    button:disabled { opacity: .5; cursor: default; }
+    .actions {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .hint { margin-top: 10px; font-size: 12px; color: var(--muted); }
+    #status { margin-top: 12px; font-size: 13px; min-height: 18px; }
+    #status.ok { color: var(--ok); }
+    #status.err { color: var(--err); }
+  </style>
+</head>
+<body>
+  <h1>Pengaturan Printer</h1>
+  <p class="sub">Pilih printer ZPL yang dipakai Print Agent. Tidak memakai default printer Windows.</p>
+
+  <div class="card">
+    <label for="printer">Printer tujuan</label>
+    <div class="row">
+      <select id="printer">
+        <option value="">Memuat daftar printer…</option>
+      </select>
+      <button id="refresh" title="Muat ulang daftar printer">↻</button>
+    </div>
+    <p class="hint" id="hint">Daftar diambil dari <code>Get-Printer</code> Windows.</p>
+
+    <div class="actions">
+      <button id="test">Tes cetak</button>
+      <div class="row">
+        <button id="cancel">Batal</button>
+        <button id="save" class="primary">Simpan</button>
+      </div>
+    </div>
+
+    <div id="status"></div>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>
