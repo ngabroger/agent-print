@@ -1,42 +1,60 @@
 const Store = require('electron-store');
+const { loadEnv, envStr, envInt, envBool, envList } = require('./env');
 
 /**
- * Persisted ke folder userData OS (di Windows: %APPDATA%/snapsnap-print-agent)
- * — bukan browser localStorage, ini file JSON biasa di disk, aman dipakai
- * di Electron main process.
+ * Sumber setting agent (docs/zd220-print-agent.md):
  *
- * Agent ini murni print agent ZPL loopback untuk dsmart (lihat
- * docs/zd220-print-agent.md). Config-nya flat, tanpa nested object.
+ *   .env  →  "sumber kebenaran", gampang diedit, satu file untuk semua setting.
+ *   electron-store  →  fallback + persist antar-update installer.
+ *
+ * Urutan menang: .env  >  nilai tersimpan di electron-store  >  default bawaan.
+ * .env dibaca sekali saat modul ini di-load. Lihat env.js untuk lokasi file
+ * yang dicari (cwd/.env, <app>/.env, dst).
  */
+
+loadEnv();
+
+const DEFAULTS = {
+  // ── HTTP server loopback (§2, §3.1) ────────────────────────────────
+  printAgentPort: 9110,
+
+  // Nama printer PERSIS dari `Get-Printer` (mis. "ZDesigner ZD220-203dpi ZPL").
+  defaultZplPrinter: null,
+
+  // Origin yang boleh fetch ke server (CORS, §4). ["*"] = izinkan semua.
+  allowedOrigins: ['*'],
+
+  // dryRun true → adapter TIDAK menyentuh printer, cuma tulis .zpl ke temp.
+  dryRun: false,
+
+  // ── BrowserWindow opsional untuk dsmart (§3.8) ─────────────────────
+  embeddedBrowserEnabled: false,
+  embeddedBrowserUrl: '',
+  embeddedBrowserKiosk: false,
+};
+
 const store = new Store({
-  name: 'camera-print-agent-config',
-  defaults: {
-    // ── HTTP server loopback (§2, §3.1) ────────────────────────────────
-    // Server hanya listen di 127.0.0.1 — tidak ada permukaan jaringan.
-    printAgentPort: 9110,
-
-    // Nama printer PERSIS dari `Get-Printer` (mis. "ZDesigner ZD220-203dpi ZPL").
-    // Dipakai kalau body POST /print tidak menyertakan "printer".
-    defaultZplPrinter: null,
-
-    // Origin yang boleh fetch ke server (CORS, §4). ["*"] = izinkan semua —
-    // aman untuk loopback tanpa data sensitif. Perketat ke domain dsmart
-    // kalau mau: ["https://app.dsmart.co", "http://localhost:3000"].
-    allowedOrigins: ['*'],
-
-    // dryRun true → adapter TIDAK menyentuh printer, cuma tulis .zpl ke temp.
-    // Berguna saat dev di mesin tanpa printer. Di non-Windows selalu efektif
-    // dry-run karena adapter yang aktif = MockPrinterAdapter.
-    dryRun: false,
-
-    // ── BrowserWindow opsional untuk dsmart (§3.8) ─────────────────────
-    // "Chrome terkurung" — tetap fetch ke :9110, TANPA preload/IPC print.
-    // Aktifkan hanya untuk PC kiosk. Default: nonaktif → perilaku identik
-    // dengan agent tanpa window.
-    embeddedBrowserEnabled: false,
-    embeddedBrowserUrl: '',
-    embeddedBrowserKiosk: false,
-  },
+  name: 'print-agent-config',
+  defaults: DEFAULTS,
 });
+
+/**
+ * Override dari .env. Nama env var sengaja sejajar dengan yang dipakai
+ * frontend dsmart (lihat docs/dsmart-frontend.env.example) supaya satu
+ * konsep, satu penamaan.
+ */
+const ENV_OVERRIDES = {
+  printAgentPort: envInt('PRINT_AGENT_PORT'),
+  defaultZplPrinter: envStr('PRINT_AGENT_DEFAULT_PRINTER'),
+  allowedOrigins: envList('PRINT_AGENT_ALLOWED_ORIGINS'),
+  dryRun: envBool('PRINT_AGENT_DRY_RUN'),
+  embeddedBrowserEnabled: envBool('PRINT_AGENT_EMBEDDED_BROWSER'),
+  embeddedBrowserUrl: envStr('PRINT_AGENT_EMBEDDED_BROWSER_URL'),
+  embeddedBrowserKiosk: envBool('PRINT_AGENT_EMBEDDED_BROWSER_KIOSK'),
+};
+
+for (const [key, value] of Object.entries(ENV_OVERRIDES)) {
+  if (value !== undefined) store.set(key, value);
+}
 
 module.exports = store;

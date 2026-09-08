@@ -1,5 +1,16 @@
 const { app, Tray, Menu, shell, clipboard } = require('electron');
 const path = require('path');
+
+// Baca .env SEBELUM config-store di-require. Sertakan folder userData sebagai
+// kandidat lokasi .env (di Windows: %APPDATA%\print-agent\.env) — berguna untuk
+// build ter-package di mana folder install read-only. IT taruh .env di situ.
+const { loadEnv } = require('./env');
+try {
+  loadEnv({ userDataDir: app.getPath('userData') });
+} catch {
+  loadEnv();
+}
+
 const store = require('./config-store');
 const printQueue = require('./print-queue');
 const { startHttpServer } = require('./http-server');
@@ -8,7 +19,7 @@ const MockPrinterAdapter = require('./printer/mock-printer-adapter');
 const WindowsPrinterAdapter = require('./printer/windows-printer-adapter');
 
 /**
- * SnapSnap Print Agent — sekarang murni print agent ZPL loopback untuk dsmart
+ * Print Agent — print agent ZPL loopback untuk dsmart
  * (docs/zd220-print-agent.md). Alur foto lama (Reverb / download ZIP / Sanctum)
  * dibuang; file lamanya disisihkan ke *.bak.
  *
@@ -67,7 +78,7 @@ function refreshTrayMenu() {
   template.push({ type: 'separator' }, { label: 'Keluar', role: 'quit' });
 
   tray.setContextMenu(Menu.buildFromTemplate(template));
-  tray.setToolTip(`SnapSnap Print Agent — :${port}`);
+  tray.setToolTip(`Print Agent — :${port}`);
 }
 
 app.whenReady().then(() => {

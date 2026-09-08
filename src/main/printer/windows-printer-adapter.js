@@ -8,6 +8,13 @@ const path = require('path');
  * Byte ZPL dikirim mentah ke antrian printer lewat print-raw.ps1 (Winspool RAW),
  * BUKAN lewat driver rendering. Printer (ZD220) yang menyusun layout.
  */
+
+// Saat ter-package, __dirname ada di dalam app.asar (archive virtual) —
+// PowerShell tidak bisa -File dari situ. electron-builder meng-unpack *.ps1
+// ke app.asar.unpacked/... via "asarUnpack" di package.json; di sini kita
+// arahkan path-nya ke sana. Mode dev: path apa adanya.
+const PS_DIR = __dirname.replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
+
 class WindowsPrinterAdapter {
   /**
    * @param {string} zpl  perintah ZPL lengkap "^XA ... ^XZ"
@@ -27,7 +34,7 @@ class WindowsPrinterAdapter {
     const tmp = path.join(os.tmpdir(), `dsmart-zpl-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
     await fs.writeFile(tmp, Buffer.from(payload, 'latin1'));
 
-    const scriptPath = path.join(__dirname, 'print-raw.ps1');
+    const scriptPath = path.join(PS_DIR, 'print-raw.ps1');
     try {
       await new Promise((resolve, reject) => {
         execFile(

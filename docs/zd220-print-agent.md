@@ -406,28 +406,32 @@ async function printRaw(zpl, opts) {
 }
 ```
 
-### 3.5 MODIFIKASI — `src/main/config-store.js`
+### 3.5 MODIFIKASI — `src/main/config-store.js` + `.env`
 
-Tambah field:
+**Sumber kebenaran = `.env`** (di folder yang sama dengan `package.json`, atau di
+`%APPDATA%/snapsnap-print-agent/.env` untuk build ter-package). `electron-store` cuma
+fallback + persist antar-update installer. Urutan menang: `.env` > nilai tersimpan >
+default. Env var OS yang sudah di-set tidak ditimpa (bisa override sekali jalan:
+`PRINT_AGENT_PORT=9200 npm start`).
 
-```jsonc
-{
-  "printAgent": {
-    "port": 9110,
-    "defaultPrinter": "ZDesigner ZD220-203dpi ZPL",   // nama persis dari Get-Printer
-    "allowedOrigins": ["https://app.dsmart.co", "http://localhost:3000"],
-    "dryRun": false,
-    "embeddedBrowser": {                 // ← BrowserWindow opsional (§3.8), default nonaktif
-      "enabled": false,
-      "url": "https://app.dsmart.co/warehouse/intake",
-      "kiosk": false
-    }
-  }
-}
-```
+`src/main/env.js` (**BARU**, nol dependency) membaca `.env`; `config-store.js` meng-cast
+tiap key dan `store.set()` kalau env-nya ada. Config-nya **flat**, bukan nested.
 
-Expose lewat `getConfig()` yang sudah ada. Kalau `embeddedBrowser` tidak ada di config,
-perlakukan sebagai `enabled: false` — perilaku default identik dengan sekarang.
+| Key `.env` | Key store | Default | Catatan |
+| --- | --- | --- | --- |
+| `PRINT_AGENT_PORT` | `printAgentPort` | `9110` | HARUS sama dengan port di `NEXT_PUBLIC_PRINT_AGENT_URL` frontend |
+| `PRINT_AGENT_DEFAULT_PRINTER` | `defaultZplPrinter` | `null` | nama persis dari `Get-Printer` |
+| `PRINT_AGENT_ALLOWED_ORIGINS` | `allowedOrigins` | `["*"]` | pisah koma; `*` = izinkan semua |
+| `PRINT_AGENT_DRY_RUN` | `dryRun` | `false` | `true` → ZPL ke file temp, tak ke printer |
+| `PRINT_AGENT_EMBEDDED_BROWSER` | `embeddedBrowserEnabled` | `false` | BrowserWindow opsional (§3.8) |
+| `PRINT_AGENT_EMBEDDED_BROWSER_URL` | `embeddedBrowserUrl` | `""` | wajib kalau di atas `true` |
+| `PRINT_AGENT_EMBEDDED_BROWSER_KIOSK` | `embeddedBrowserKiosk` | `false` | fullscreen kiosk |
+
+Template lengkap: [`.env.example`](../.env.example) (agent) dan
+[`docs/dsmart-frontend.env.example`](./dsmart-frontend.env.example) (frontend dsmart —
+referensi, penamaan port sengaja sejajar). `.env` & `.env.local` di-gitignore.
+
+Modul lain baca via `store.get('printAgentPort')` dst — tidak perlu `getConfig()`.
 
 ### 3.6 Tray + auto-start
 
@@ -450,7 +454,9 @@ Electron app harus hidup di background:
 - [ ] `windows-printer-adapter.js` — method `printRaw(zpl, { printer, copies })`
 - [ ] BARU `src/main/printer/print-raw.ps1` — Winspool RAW write
 - [ ] `mock-printer-adapter.js` — `printRaw()` tulis ke file (dev)
-- [ ] `config-store.js` — blok `printAgent` (port, defaultPrinter, allowedOrigins, dryRun, embeddedBrowser)
+- [ ] BARU `src/main/env.js` — loader `.env` nol-dependency
+- [ ] `config-store.js` — defaults flat + override dari `.env` (lihat tabel §3.5)
+- [ ] BARU `.env.example` — template config agent; `.env` di-gitignore
 - [ ] `app.setLoginItemSettings({ openAtLogin: true })` / installer auto-start
 - [ ] Encoding: `Buffer.from(zpl, "latin1")` — **bukan** utf8
 - [ ] Installer: pilih default printer saat setup; whitelist di antivirus
@@ -766,6 +772,60 @@ ukuran **21mm × 110mm** — lihat render sebelum menyentuh printer fisik.
 
 ## 6. Perubahan di frontend dsmart
 
+### 6.0 TODO checklist (repo dsmart)
+
+Urutan aman: **A → B → C → D → E**. A–C bisa jalan tanpa printer fisik (pakai mock/dry-run,
+§6.6). D butuh agent + ZD220 nyala. E setelah semua hijau.
+
+#### A. Setup & kontrak
+
+- [ ] Tambah `NEXT_PUBLIC_PRINT_AGENT_URL` ke `.env` / `.env.local` — **port WAJIB sama**
+  dengan `PRINT_AGENT_PORT` di `.env` agent (default `9110`). Template:
+  [`docs/dsmart-frontend.env.example`](./dsmart-frontend.env.example). (§6.2)
+- [ ] Pastikan origin dsmart (`https://app.dsmart.co`, `http://localhost:3000`, dst) masuk
+  `PRINT_AGENT_ALLOWED_ORIGINS` di config agent — koordinasi dengan yang deploy agent. (§4)
+- [ ] Konfirmasi target PC pakai **Chrome/Edge**, bukan Firefox (loopback secure context, §7).
+
+#### B. Modul klien
+
+- [ ] BARU `lib/hardware/printAgent.ts` — `getAgentHealth()`, `printZpl()`, `PrintAgentError`. (§6.1)
+- [ ] Tangani minimal kode error dari agent: `unreachable`, `invalid_zpl`, `printer_not_found`,
+  `printer_offline`, `internal` → pesan operator yang jelas (§9 tabel).
+
+#### C. Generator ZPL
+
+- [ ] BARU `lib/hardware/zd220Label.ts` — `buildFruitZpl(input)`. (§5.5)
+- [ ] `sanitizeField()` — buang `^` `~`, transliterasi non-ASCII (`DURÉE` → `DUREE`). (§5.3)
+- [ ] `splitFruitCode()` — samakan perilakunya dengan yang ada di `FruitLabel.tsx`.
+- [ ] Validasi output di **Labelary** (8 dpmm, 21mm × 110mm) sebelum ke printer. (§5.6)
+- [ ] Simpan angka `^FO` / font sebagai konstanta di file ini — nanti digeser saat kalibrasi (§8).
+
+#### D. Rombak modal & CSS
+
+- [ ] Rombak `app/(workspace)/warehouse/intake/_components/PrintFruitLabelModal.tsx`:
+  buang `window.print()`, portal ke `<body>`, `useEffect` injeksi `<style>`, `mounted` gate,
+  kelas `.label-print` / `.label-print-rotate`. Ganti: `getAgentHealth()` saat buka +
+  badge status, `handlePrint()` → `buildFruitZpl()` → `printZpl()`. (§6.3)
+- [ ] `FruitLabel.tsx` **tetap** dipakai — hanya preview layar di modal, bukan target cetak.
+- [ ] `app/globals.css` — **jangan hapus** blok `@media print` (basket/output masih pakai).
+  Cukup pastikan modal fruit tidak lagi menambah `.label-print`; beri komentar. (§6.4)
+- [ ] Data grading & cetak label **terpisah** — kalau `printZpl()` gagal, grading tetap
+  tersimpan, operator bisa **Skip** dan cetak ulang nanti. (§9)
+
+#### E. Uji & lanjutan
+
+- [ ] Uji end-to-end di 1 PC (Chrome): grade fruit dummy → Print → label keluar dari ZD220.
+- [ ] Uji jalur gagal: matikan agent → badge "tidak terhubung" + tombol disabled; cabut
+  label → toast `media out`.
+- [ ] (Opsional) Tombol **"Print ulang label"** di histori intake → `buildFruitZpl()` +
+  `printZpl()` yang sama, tanpa perubahan agent. (§9)
+- [ ] (Menyusul) `buildBasketZpl()` + `buildOutputZpl()` + rombak modalnya, pola sama. (§6.5)
+
+> **Yang TIDAK perlu di FE:** tidak ada preload/IPC, tidak ada perubahan kalau operator buka
+> dsmart lewat BrowserWindow Electron (§3.8) — transportnya tetap `fetch` yang sama.
+> Ganti port agent = satu-satunya perubahan yang menuntut **re-build FE** (nilai
+> `NEXT_PUBLIC_*` ikut ter-bundle).
+
 ### 6.1 BARU — `lib/hardware/printAgent.ts`
 
 ```ts
@@ -1068,8 +1128,10 @@ Distribusi ke banyak PC: paket lewat MDM / GPO / script IT yang sudah dipakai un
 | `src/main/printer/windows-printer-adapter.js` | Method `printRaw(zpl, { printer, copies })` |
 | `src/main/printer/print-raw.ps1` | **BARU** — Winspool RAW write |
 | `src/main/printer/mock-printer-adapter.js` | `printRaw()` tulis ZPL ke file (dev) |
-| `src/main/config-store.js` | Blok `printAgent` (port, defaultPrinter, allowedOrigins, dryRun, embeddedBrowser) |
-| `src/main/browser-window.js` | **BARU, opsional** (§3.8) — BrowserWindow me-load dsmart; no-op kalau `embeddedBrowser.enabled === false`. Tanpa preload/IPC print. |
+| `src/main/env.js` | **BARU** — loader `.env` nol-dependency |
+| `src/main/config-store.js` | Defaults flat + override dari `.env` (tabel §3.5) |
+| `.env.example` | **BARU** — template config agent; `.env` di-gitignore |
+| `src/main/browser-window.js` | **BARU, opsional** (§3.8) — BrowserWindow me-load dsmart; no-op kalau `embeddedBrowserEnabled === false`. Tanpa preload/IPC print. |
 | installer / `index.js` | `setLoginItemSettings({ openAtLogin: true })` |
 
 ### Repo dsmart (frontend)
@@ -1079,7 +1141,7 @@ Distribusi ke banyak PC: paket lewat MDM / GPO / script IT yang sudah dipakai un
 | `lib/hardware/zd220Label.ts` | **BARU** — `buildFruitZpl()` |
 | `lib/hardware/printAgent.ts` | **BARU** — klien HTTP ke agent |
 | `app/(workspace)/warehouse/intake/_components/PrintFruitLabelModal.tsx` | Rombak — buang portal/`window.print()`, panggil agent, badge status |
-| `.env` | Tambah `NEXT_PUBLIC_PRINT_AGENT_URL` |
+| `.env` | Tambah `NEXT_PUBLIC_PRINT_AGENT_URL` (port harus sama dengan `PRINT_AGENT_PORT` agent; template: `docs/dsmart-frontend.env.example`) |
 | `app/globals.css` | Biarkan blok `@media print` selama basket/output belum pindah; komentari fruit label tak lagi memakainya |
 | `app/(workspace)/warehouse/baskets/_components/PrintBasketLabelModal.tsx` | Menyusul — `buildBasketZpl()` |
 | `app/(workspace)/warehouse/local-process/_components/PrintOutputLabelModal.tsx` | Menyusul — `buildOutputZpl()` |
@@ -1087,6 +1149,8 @@ Distribusi ke banyak PC: paket lewat MDM / GPO / script IT yang sudah dipakai un
 ---
 
 ## 12. Urutan pengerjaan yang disarankan
+
+> Checklist per-repo: **Electron app** → §3.7 · **frontend dsmart** → §6.0 · **IT deploy** → §10.
 
 1. **Spike transport** (½ hari): dari Electron app, panggil `printRaw("^XA^FO50,50^A0N,40,40^FDTEST^FS^XZ", { printer })`
    via `print-raw.ps1`. Pastikan label keluar dari ZD220. Ini membuktikan firmware ZD220 terima ZPL.

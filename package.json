@@ -1,14 +1,64 @@
 {
-  "name": "agent-print",
+  "name": "print-agent",
+  "productName": "Print Agent",
   "version": "0.1.0",
+  "description": "Local print agent ZPL loopback untuk dsmart (Zebra ZD220)",
+  "author": "dsmart",
   "main": "src/main/index.js",
   "scripts": {
-    "start": "electron . --no-sandbox"
+    "start": "electron . --no-sandbox",
+    "dist": "electron-builder --win --x64",
+    "pack": "electron-builder --dir"
   },
   "dependencies": {
     "electron-store": "^8.2.0"
   },
   "devDependencies": {
-    "electron": "^31.0.0"
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "app.dsmart.print-agent",
+    "productName": "Print Agent",
+    "copyright": "Copyright © 2026",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "!src/**/*.bak",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "src/main/printer/*.ps1"
+    ],
+    "extraResources": [
+      {
+        "from": ".env.example",
+        "to": ".env.example"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "PrintAgent-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Print Agent",
+      "runAfterFinish": true
+    }
   }
 }

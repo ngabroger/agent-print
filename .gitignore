@@ -1,4 +1,13 @@
 node_modules/
 *.log
+*.bak
+
+# hasil build electron-builder
+dist/
+
+# konfigurasi lokal per-mesin — jangan commit. Template .env.example TETAP di-track.
+.env
+.env.local
+.env.example
 
 docs/*
