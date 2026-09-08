@@ -9,28 +9,45 @@ via **ZPL**, tanpa dialog print browser dan **tanpa konfirmasi tambahan** untuk 
 
 Keputusan yang sudah diambil (lihat §0):
 
-- **Pendekatan A** — Electron app membuka HTTP server di `127.0.0.1:9110`; dsmart tetap
-  dibuka operator di **Chrome biasa** dan `fetch` ke server itu. (Bukan pendekatan
-  "load dsmart di dalam BrowserWindow".)
+- **Pendekatan A** — Electron app membuka HTTP server di `127.0.0.1:9110`; dsmart dibuka
+  operator di **Chrome biasa** dan `fetch` ke server itu. Ini inti dan tidak berubah.
+- **BrowserWindow untuk dsmart itu opsional** (§3.8) — Electron app boleh juga membuka
+  window sendiri yang me-load dsmart untuk PC kiosk. Window itu **tetap `fetch` ke `:9110`**
+  seperti Chrome — bukan jalur transport baru, tidak menambah preload/IPC. Ini **bukan**
+  "Pendekatan B murni" (yang membuang HTTP server dan mewajibkan IPC-only — ditolak, §0).
 - **Jalur ZPL**, bukan `window.print()`. Printer yang menyusun layout label.
 - Frontend yang membuat ZPL; Electron app hanya meneruskan byte ke printer.
 
 ---
 
-## 0. Kenapa Pendekatan A (bukan B)
+## 0. Kenapa Pendekatan A (inti), dan kenapa bukan B murni
 
-| | A — HTTP server di Electron, dsmart di Chrome | B — dsmart di-load di BrowserWindow Electron |
+**Yang dipakai: Pendekatan A** — Electron app membuka HTTP server loopback `127.0.0.1:9110`,
+frontend dsmart `fetch` ke situ. Jalur ini adalah **inti** dan tidak berubah.
+
+**BrowserWindow untuk dsmart itu opsional** (§3.8) — Electron app *boleh* juga membuka
+window sendiri yang me-load dsmart, buat PC yang mau dipakai kiosk-style. Tapi window itu
+**tetap `fetch` ke `:9110`** persis seperti Chrome — halaman web tidak peduli dia dirender
+Chrome atau BrowserWindow Electron; `fetch` ke `127.0.0.1` jalan di dua-duanya. Jadi
+BrowserWindow opsional = **"Chrome terkurung"**, bukan jalur transport baru, dan **tidak**
+menambah preload/IPC untuk print.
+
+| | A — HTTP server loopback (+ BrowserWindow opsional) | B murni — dsmart hanya di BrowserWindow, IPC-only, tanpa HTTP server |
 | --- | --- | --- |
-| Cara operator buka dsmart | **Chrome biasa, tidak berubah** | Wajib lewat Electron app |
+| Cara operator buka dsmart | **Chrome biasa** (default) **atau** window Electron opsional | Wajib lewat Electron app |
 | PC dipakai hal lain (email/Excel) | Cocok — tidak memaksa apa pun | Kurang cocok |
 | Konfirmasi saat print | **Nol** (fetch → PowerShell → keluar) | Nol (IPC → PowerShell → keluar) |
-| Kode baru di Electron | HTTP server + CORS (~100 baris) | Window lifecycle + preload bridge + guard |
+| Kode baru di Electron | HTTP server + CORS (~100 baris); BrowserWindow opsional ~30 baris | Window lifecycle + preload bridge + guard |
 | Ganti API print | Update server, app tetap | **Rilis ulang Electron app ke semua PC** |
 | Satu app layani banyak web app | Ya | Tidak |
 | Port terbuka di loopback | Ya (127.0.0.1 saja) | Tidak |
+| Transport dari halaman dsmart | `fetch` HTTP (sama di Chrome & BrowserWindow) | `ipcRenderer.invoke` via preload |
 
-Karena operator pakai **Chrome biasa di PC multi-fungsi**, A menang. B baru masuk akal
-kalau PC-nya dedicated kiosk dan boleh dikunci ke satu app.
+Karena operator pakai **Chrome biasa di PC multi-fungsi**, A menang. B murni baru masuk akal
+kalau HTTP server benar-benar dibuang dan dsmart dikunci hanya boleh dibuka lewat Electron —
+itu berarti preload + `ipcMain.handle` + guard navigasi, dan setiap ganti kontrak print =
+rilis ulang app ke semua PC. Selama HTTP loopback masih ada, menambahkan BrowserWindow
+**tidak** menyeret kita ke B murni: preload/IPC tetap tidak diperlukan.
 
 Tujuan "nol konfirmasi saat print" tercapai di **kedua** pendekatan — `window.print()` dan
 dialognya hilang di dua-duanya. Yang membedakan cuma cara buka dsmart & biaya maintenance.
@@ -79,31 +96,31 @@ target cetak.
 
 ---
 
-## 2. Arsitektur (Pendekatan A)
+## 2. Arsitektur (Pendekatan A + BrowserWindow opsional)
 
 ```
 ┌──────────────────────────── PC operator (Windows, terkontrol IT) ───────────────────────────┐
 │                                                                                            │
-│  Chrome                                  Electron app (photo-printer, +HTTP server, tray)   │
-│  dsmart frontend                         ┌──────────────────────────────────────────────┐   │
-│  ┌────────────────────────┐              │  src/main/http-server.js   ← BARU             │   │
-│  │ PrintFruitLabelModal   │  POST /print │    GET  /health                              │   │
-│  │  - preview: FruitLabel  │ ───────────▶ │    GET  /printers                            │   │
-│  │  - klik Print           │  { zpl,      │    POST /print  { zpl, copies?, printer? }   │   │
-│  │  - buildFruitZpl(...)   │    copies }   │        │                                     │   │
-│  └────────────────────────┘ ◀─────────── │        ▼                                     │   │
-│                              { jobId }    │  src/main/print-queue.js  ← REUSE            │   │
-│                              / { error }  │        │  enqueue({ type: "zpl", data })     │   │
-│                                           │        ▼                                     │   │
-│                                           │  src/main/printer/                           │   │
-│                                           │    windows-printer-adapter.js ← MODIFIKASI   │   │
-│                                           │      → RAW spool via print-raw.ps1 (BARU)    │   │
-│                                           │    mock-printer-adapter.js    ← REUSE (dev)  │   │
-│                                           └───────────────────┬──────────────────────────┘   │
-│                                                               │ USB (RAW)                    │
-│                                                        ┌──────▼───────┐                      │
-│                                                        │  Zebra ZD220 │                      │
-│                                                        └──────────────┘                      │
+│  dsmart frontend dibuka lewat SALAH SATU:  Electron app (photo-printer, +HTTP server, tray) │
+│                                            ┌──────────────────────────────────────────────┐ │
+│  ┌─ Chrome biasa ───────────┐              │  src/main/http-server.js   ← BARU             │ │
+│  │ PrintFruitLabelModal     │  POST /print │    GET  /health                              │ │
+│  │  - preview: FruitLabel    │ ───────────▶ │    GET  /printers                            │ │
+│  │  - klik Print            ─┼──┐           │    POST /print  { zpl, copies?, printer? }   │ │
+│  │  - buildFruitZpl(...)     │  │ { zpl,    │        │                                     │ │
+│  └──────────────────────────┘  │  copies } │        ▼                                     │ │
+│                                │           │  src/main/print-queue.js  ← REUSE            │ │
+│  ┌─ BrowserWindow (opsional) ┐ │  fetch    │        │  enqueue({ type: "zpl", data })     │ │
+│  │  src/main/browser-window  │ │  ke :9110 │        ▼                                     │ │
+│  │  .js  ← BARU (opsional)   │ │  (SAMA)   │  src/main/printer/                           │ │
+│  │  loadURL(dsmartUrl)       │ │           │    windows-printer-adapter.js ← MODIFIKASI   │ │
+│  │  = "Chrome terkurung"     ─┼─┘           │      → RAW spool via print-raw.ps1 (BARU)    │ │
+│  │  TANPA preload/IPC print  │ ◀─────────── │    mock-printer-adapter.js    ← REUSE (dev)  │ │
+│  └──────────────────────────┘   { jobId }  └───────────────────┬──────────────────────────┘ │
+│                                 / { error }                    │ USB (RAW)                   │
+│                                                         ┌──────▼───────┐                     │
+│                                                         │  Zebra ZD220 │                     │
+│                                                         └──────────────┘                     │
 └────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -113,6 +130,12 @@ Poin desain:
    permukaan jaringan.
 2. **Frontend yang membuat ZPL.** Electron app "bodoh": terima byte ZPL, masukkan ke
    `print-queue.js`, adapter tulis ke printer. Logika label tetap satu tempat (repo dsmart).
+2b. **BrowserWindow opsional = "Chrome terkurung".** Kalau IT mau shortcut "dsmart intake"
+   yang buka fullscreen/kiosk, Electron app boleh membuka `BrowserWindow` yang `loadURL`
+   ke dsmart (§3.8). Halaman itu **tetap `fetch` ke `http://127.0.0.1:9110/print`** —
+   transport identik dengan Chrome, **tanpa** preload maupun `ipcMain.handle` untuk print.
+   Jalur cetak (`http-server.js` → `print-queue.js` → `printRaw`) tidak berubah sedikit pun
+   apakah dsmart dibuka di Chrome atau di window ini.
 3. **Mixed content**: dsmart di `https://`, server di `http://127.0.0.1`. Chrome & Edge
    memperlakukan `http://127.0.0.1` & `http://localhost` sebagai *potentially trustworthy*
    (secure context) → `fetch` dari HTTPS ke loopback **tidak** kena blok mixed-content.
@@ -137,11 +160,14 @@ src/
     reverb-client.js
     config-store.js              ← REUSE
     print-queue.js               ← REUSE
+    http-server.js               ← BARU (§3.1)
+    browser-window.js            ← BARU, OPSIONAL (§3.8) — hanya kalau ada PC kiosk
     printer/
       windows-printer-adapter.js ← MODIFIKASI (tambah jalur ZPL RAW)
       mock-printer-adapter.js    ← REUSE (dev / non-Windows)
+      print-raw.ps1              ← BARU (§3.3) — Winspool RAW write
       print-image.ps1            (tetap, untuk foto)
-  preload/preload.js
+  preload/preload.js             ← tak tersentuh (BrowserWindow §3.8 tak butuh preload print)
   renderer/ (login/setup)        ← tak tersentuh
 ```
 
@@ -390,12 +416,18 @@ Tambah field:
     "port": 9110,
     "defaultPrinter": "ZDesigner ZD220-203dpi ZPL",   // nama persis dari Get-Printer
     "allowedOrigins": ["https://app.dsmart.co", "http://localhost:3000"],
-    "dryRun": false
+    "dryRun": false,
+    "embeddedBrowser": {                 // ← BrowserWindow opsional (§3.8), default nonaktif
+      "enabled": false,
+      "url": "https://app.dsmart.co/warehouse/intake",
+      "kiosk": false
+    }
   }
 }
 ```
 
-Expose lewat `getConfig()` yang sudah ada.
+Expose lewat `getConfig()` yang sudah ada. Kalau `embeddedBrowser` tidak ada di config,
+perlakukan sebagai `enabled: false` — perilaku default identik dengan sekarang.
 
 ### 3.6 Tray + auto-start
 
@@ -418,10 +450,83 @@ Electron app harus hidup di background:
 - [ ] `windows-printer-adapter.js` — method `printRaw(zpl, { printer, copies })`
 - [ ] BARU `src/main/printer/print-raw.ps1` — Winspool RAW write
 - [ ] `mock-printer-adapter.js` — `printRaw()` tulis ke file (dev)
-- [ ] `config-store.js` — blok `printAgent` (port, defaultPrinter, allowedOrigins, dryRun)
+- [ ] `config-store.js` — blok `printAgent` (port, defaultPrinter, allowedOrigins, dryRun, embeddedBrowser)
 - [ ] `app.setLoginItemSettings({ openAtLogin: true })` / installer auto-start
 - [ ] Encoding: `Buffer.from(zpl, "latin1")` — **bukan** utf8
 - [ ] Installer: pilih default printer saat setup; whitelist di antivirus
+- [ ] (opsional) BARU `src/main/browser-window.js` — BrowserWindow me-load dsmart (§3.8), hanya kalau `embeddedBrowser.enabled`
+
+### 3.8 (Opsional) BrowserWindow untuk dsmart — "Chrome terkurung"
+
+Fitur ini **tidak wajib** dan tidak menyentuh jalur cetak. Aktifkan hanya kalau IT ingin PC
+tertentu dipakai kiosk-style: satu shortcut yang buka dsmart fullscreen, tanpa address bar,
+tanpa tab lain.
+
+Yang **tidak** dilakukan:
+
+- **Tidak** ada `preload.js` untuk print, **tidak** ada `ipcMain.handle("print", …)`.
+  Halaman dsmart di window ini mencetak dengan `fetch("http://127.0.0.1:9110/print")`
+  yang **sama persis** seperti di Chrome (§4, §6.1). BrowserWindow ini cuma Chromium yang
+  merender URL dsmart.
+- **Tidak** menonaktifkan `webSecurity`. `http://127.0.0.1` sudah *potentially trustworthy*
+  di Chromium → `fetch` dari halaman `https://` ke loopback tidak kena mixed-content (§7).
+- **Tidak** membuang HTTP server. Kalau HTTP server dibuang dan diganti IPC, itu B murni
+  (§0) — bukan yang ini.
+
+```js
+// src/main/browser-window.js  — BARU, opsional
+const { BrowserWindow, shell } = require("electron");
+const { getConfig } = require("./config-store");
+
+function openDsmartWindow() {
+  const cfg = getConfig().printAgent?.embeddedBrowser;
+  if (!cfg?.enabled) return null;
+
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    kiosk: !!cfg.kiosk,
+    autoHideMenuBar: true,
+    webPreferences: {
+      // default aman: context isolation on, node integration off, webSecurity on.
+      // TIDAK ada preload untuk print — halaman pakai fetch ke :9110 seperti biasa.
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  win.loadURL(cfg.url);
+
+  // Link "buka di tab baru" → arahkan ke browser OS, jangan bikin window Electron liar.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: "deny" };
+  });
+
+  return win;
+}
+
+module.exports = { openDsmartWindow };
+```
+
+Panggil dari `src/main/index.js` **setelah** `startHttpServer()` supaya `:9110` sudah siap
+saat halaman dimuat:
+
+```js
+const { startHttpServer } = require("./http-server");
+const { openDsmartWindow } = require("./browser-window");
+
+app.whenReady().then(() => {
+  // ... window setup foto kamu yang sekarang ...
+  startHttpServer();
+  openDsmartWindow(); // no-op kalau embeddedBrowser.enabled === false
+});
+```
+
+Interaksi dengan §3.6 (tray + `window-all-closed`): tetap **jangan quit** saat window
+ditutup — operator boleh menutup window dsmart dan HTTP server harus tetap hidup di tray
+supaya Chrome (kalau juga dipakai) masih bisa mencetak. Tambahkan item tray "Buka dsmart"
+yang memanggil `openDsmartWindow()` lagi kalau `embeddedBrowser.enabled`.
 
 ---
 
@@ -847,13 +952,15 @@ label sudah tidak memakainya. Hapus seluruh blok hanya setelah **ketiganya** pin
 | Hal | Status |
 | --- | --- |
 | HTTPS page → `fetch` ke `http://127.0.0.1` | **OK di Chrome & Edge** (loopback = secure context, bukan mixed-content) |
-| Firefox | Loopback TIDAK otomatis secure context. Kalau perlu: server pakai HTTPS + cert lokal (mkcert). Untuk sekarang standarkan Chrome/Edge. |
+| dsmart dibuka di BrowserWindow Electron (§3.8) | **Sama seperti Chrome** — engine-nya Chromium, `http://127.0.0.1` tetap *potentially trustworthy*, `fetch` dari `https://` ke loopback tidak kena mixed-content. Tidak perlu preload/IPC, tidak perlu matikan `webSecurity`. |
+| Firefox | Loopback TIDAK otomatis secure context. Kalau perlu: server pakai HTTPS + cert lokal (mkcert). Untuk sekarang standarkan Chrome/Edge (atau pakai BrowserWindow §3.8 yang basis Chromium). |
 | CORS | Server WAJIB kirim `Access-Control-Allow-*` + handle `OPTIONS`, jika tidak `fetch` gagal |
 | Antivirus / firewall | Loopback listener kadang di-flag. IT whitelist executable Electron app. |
 | Windows RAW spooling | Butuh driver Zebra ZDesigner ATAU "Generic / Text Only" terpasang. ZDesigner disarankan. |
 | Multi-printer per PC | `printer` di body `/print` memilih; kosong → `defaultPrinter` dari config-store |
 | ZD220 firmware terkunci | Sebagian unit retail membatasi ZPL. Tes dini (§12 langkah 1): kirim `^XA^FO50,50^A0N,40,40^FDTEST^FS^XZ` via `printRaw`. Kalau tak keluar → cek varian/firmware. |
 | Electron app ditutup operator | Print mati. Frontend badge "tidak terhubung" + tombol disabled. Mitigasi: jangan quit saat window ditutup, hidup di tray (§3.6). |
+| Window dsmart (§3.8) ditutup, app masih di tray | HTTP server tetap jalan → Chrome (kalau juga dipakai) masih bisa cetak. Buka lagi lewat item tray "Buka dsmart". |
 
 ---
 
@@ -889,6 +996,11 @@ Kepekatan (buram / terlalu tebal): `^MD<0..30>` atau `~SD<0..30>` (darkness), ke
 Setelah Electron app ter-deploy IT, dari sisi operator **tidak ada langkah baru** — malah
 lebih sedikit. Dsmart tetap dibuka di **Chrome seperti biasa**.
 
+Di PC yang IT konfigurasi dengan `embeddedBrowser.enabled` (§3.8), operator boleh membuka
+dsmart lewat **shortcut "dsmart intake"** yang langsung menampilkan window fullscreen tanpa
+address bar. **Langkah cetak di bawah identik** — yang beda hanya cara membuka aplikasinya.
+Kedua cara (Chrome / window Electron) mencetak ke printer yang sama lewat jalur yang sama.
+
 ### Alur normal (intake fruit)
 
 1. Grading fruit seperti biasa → klik **"Save & Print Label"**.
@@ -908,6 +1020,7 @@ margin/scale. **Tidak ada** konfirmasi.
 | Toast **"Gagal cetak: media out"** | Label habis | Ganti roll, klik Print lagi |
 | Toast **"Gagal cetak: ..."** lain | Error printer (head terbuka, dll) | Betulkan, klik Print lagi |
 | Tombol jadi **"Mencetak…"** lalu kembali tanpa toast sukses | Kemungkinan timeout | Cek printer fisik; jangan spam klik (bisa dobel) |
+| (window Electron §3.8) Window dsmart tertutup tak sengaja | App masih di tray | Klik ikon tray → **"Buka dsmart"**. Print tetap normal setelahnya. |
 
 Poin penting untuk operator: **simpan fruit dan cetak label itu terpisah.** Kalau cetak
 gagal, grading tetap tersimpan — tekan **Skip**, lanjut kerja, cetak ulang belakangan.
@@ -934,6 +1047,10 @@ Di halaman histori intake, tombol **"Print ulang label"** per fruit → panggil 
    - Chrome buka `http://127.0.0.1:9110/health` → JSON `ok: true`.
    - Buka dsmart → intake → grade fruit dummy → Print → label keluar.
 6. Ganti unit ZD220 → cukup update `printAgent.defaultPrinter` kalau namanya berubah.
+7. **(Opsional) PC kiosk** — kalau PC ini mau dipakai khusus dsmart intake: set
+   `printAgent.embeddedBrowser.enabled = true`, `url` = halaman intake dsmart, `kiosk = true`
+   (§3.8). Buatkan shortcut yang menjalankan Electron app. Operator buka dsmart lewat window
+   itu; jalur cetak tidak berubah. PC lain biarkan `enabled = false` — mereka pakai Chrome.
 
 Distribusi ke banyak PC: paket lewat MDM / GPO / script IT yang sudah dipakai untuk app foto.
 
@@ -951,7 +1068,8 @@ Distribusi ke banyak PC: paket lewat MDM / GPO / script IT yang sudah dipakai un
 | `src/main/printer/windows-printer-adapter.js` | Method `printRaw(zpl, { printer, copies })` |
 | `src/main/printer/print-raw.ps1` | **BARU** — Winspool RAW write |
 | `src/main/printer/mock-printer-adapter.js` | `printRaw()` tulis ZPL ke file (dev) |
-| `src/main/config-store.js` | Blok `printAgent` (port, defaultPrinter, allowedOrigins, dryRun) |
+| `src/main/config-store.js` | Blok `printAgent` (port, defaultPrinter, allowedOrigins, dryRun, embeddedBrowser) |
+| `src/main/browser-window.js` | **BARU, opsional** (§3.8) — BrowserWindow me-load dsmart; no-op kalau `embeddedBrowser.enabled === false`. Tanpa preload/IPC print. |
 | installer / `index.js` | `setLoginItemSettings({ openAtLogin: true })` |
 
 ### Repo dsmart (frontend)
@@ -976,5 +1094,8 @@ Distribusi ke banyak PC: paket lewat MDM / GPO / script IT yang sudah dipakai un
 3. **`zd220Label.ts` + validasi di Labelary** (½ hari) — belum ke printer.
 4. **Kalibrasi ke label fisik** (§8) (½–1 hari, iteratif).
 5. **Rombak `PrintFruitLabelModal` + `printAgent.ts`** (½ hari).
-6. **Uji end-to-end** di 1 PC → **installer + rollout IT**.
+6. **Uji end-to-end** di 1 PC (Chrome) → **installer + rollout IT**.
 7. Basket & output label menyusul (masing-masing ~2 jam sekali pola mapan).
+8. **(Opsional, hanya kalau ada PC kiosk)** `browser-window.js` + toggle `embeddedBrowser`
+   (§3.8) (~2 jam). Tidak menyentuh jalur cetak — bisa dikerjakan kapan saja setelah
+   langkah 6, atau dilewati sama sekali.

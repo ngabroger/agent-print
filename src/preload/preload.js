@@ -1,12 +1,5 @@
-const { contextBridge, ipcRenderer } = require('electron');
-
-// contextIsolation: true + preload seperti ini = renderer TIDAK bisa akses
-// Node.js API langsung, cuma lewat jembatan yang eksplisit didefinisikan
-// di sini — praktik keamanan standar Electron, bukan opsional.
-contextBridge.exposeInMainWorld('agent', {
-  login: (email, password) => ipcRenderer.invoke('auth:login', { email, password }),
-  afterLogin: () => ipcRenderer.invoke('auth:after-login'),
-  listEvents: () => ipcRenderer.invoke('setup:list-events'),
-  listPrinters: () => ipcRenderer.invoke('setup:list-printers'),
-  completeSetup: (payload) => ipcRenderer.invoke('setup:complete', payload),
-});
+// Agent ZPL loopback tidak punya renderer sendiri, dan BrowserWindow opsional
+// untuk dsmart (docs/zd220-print-agent.md §3.8) sengaja TIDAK memakai preload
+// untuk print — halaman dsmart mencetak lewat fetch ke http://127.0.0.1:<port>.
+//
+// File ini dibiarkan kosong agar referensi lama (kalau ada) tidak error.

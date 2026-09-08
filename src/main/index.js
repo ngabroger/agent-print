@@ -1,49 +1,33 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain } = require('electron');
+const { app, Tray, Menu, shell, clipboard } = require('electron');
 const path = require('path');
-const os = require('os');
 const store = require('./config-store');
-const api = require('./api-client');
-const reverb = require('./reverb-client');
 const printQueue = require('./print-queue');
+const { startHttpServer } = require('./http-server');
+const { openDsmartWindow } = require('./browser-window');
 const MockPrinterAdapter = require('./printer/mock-printer-adapter');
 const WindowsPrinterAdapter = require('./printer/windows-printer-adapter');
 
-let tray = null;
-let authWindow = null;
-let setupWindow = null;
+/**
+ * SnapSnap Print Agent — sekarang murni print agent ZPL loopback untuk dsmart
+ * (docs/zd220-print-agent.md). Alur foto lama (Reverb / download ZIP / Sanctum)
+ * dibuang; file lamanya disisihkan ke *.bak.
+ *
+ * Jalur kerja:
+ *   HTTP server 127.0.0.1:<port>  →  print-queue.enqueuePrintJob({ type: 'zpl' })
+ *   →  adapter.printRaw(zpl, { printer, copies })  →  ZD220
+ */
 
-// Auto-pilih adapter dari OS — gak perlu toggle manual. Di Ubuntu (dev)
-// otomatis Mock, di Windows (real) otomatis WindowsPrinterAdapter.
+let tray = null;
+
+// Auto-pilih adapter dari OS — tanpa toggle manual. Ubuntu (dev) → Mock,
+// Windows (real) → WindowsPrinterAdapter (Winspool RAW via print-raw.ps1).
 const printerAdapter = process.platform === 'win32' ? new WindowsPrinterAdapter() : new MockPrinterAdapter();
 printQueue.setPrinterAdapter(printerAdapter);
 console.log(`[Agent] Printer adapter aktif: ${printerAdapter.constructor.name}`);
 
-function createAuthWindow() {
-  authWindow = new BrowserWindow({
-    width: 380,
-    height: 420,
-    resizable: false,
-    webPreferences: {
-      preload: path.join(__dirname, '../preload/preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-  authWindow.loadFile(path.join(__dirname, '../renderer/login.html'));
-}
-
-function createSetupWindow() {
-  setupWindow = new BrowserWindow({
-    width: 420,
-    height: 480,
-    resizable: false,
-    webPreferences: {
-      preload: path.join(__dirname, '../preload/preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-  setupWindow.loadFile(path.join(__dirname, '../renderer/setup.html'));
+// Single instance — dua proses agent = dua listener di port yang sama = bentrok.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
 }
 
 function createTray() {
@@ -58,80 +42,49 @@ function createTray() {
 function refreshTrayMenu() {
   if (!tray) return;
 
-  const isReady = Boolean(store.get('token') && store.get('stationId'));
-  const label = isReady
-    ? `Terhubung — ${store.get('eventName') ?? 'event'} (${store.get('printerName')})`
-    : 'Belum disetup';
+  const port = Number(store.get('printAgentPort')) || 9110;
+  const printer = store.get('defaultZplPrinter') || '(belum diset)';
+  const dryRun = store.get('dryRun') ? ' [dryRun]' : '';
 
-  const menu = Menu.buildFromTemplate([
-    { label, enabled: false },
+  const template = [
+    { label: `Print agent: http://127.0.0.1:${port}${dryRun}`, enabled: false },
+    { label: `Printer: ${printer}`, enabled: false },
     { type: 'separator' },
     {
-      label: 'Setup ulang',
-      click: () => {
-        reverb.disconnect();
-        store.clear();
-        createAuthWindow();
-      },
+      label: 'Cek /health',
+      click: () => shell.openExternal(`http://127.0.0.1:${port}/health`),
     },
-    { label: 'Keluar', role: 'quit' },
-  ]);
-  tray.setContextMenu(menu);
-  tray.setToolTip(isReady ? 'SnapSnap Print Agent — terhubung' : 'SnapSnap Print Agent — belum disetup');
-}
+    {
+      label: 'Salin URL agent',
+      click: () => clipboard.writeText(`http://127.0.0.1:${port}`),
+    },
+  ];
 
-// ── Engine (listener Reverb + heartbeat) ────────────────────────────────
+  if (store.get('embeddedBrowserEnabled')) {
+    template.push({ label: 'Buka dsmart', click: () => openDsmartWindow() });
+  }
 
-function startEngine() {
-  reverb.connect((data) => {
-    console.log('[Engine] Print request baru diterima:', data.print_request_id);
-    printQueue.enqueue(data);
-  });
+  template.push({ type: 'separator' }, { label: 'Keluar', role: 'quit' });
 
-  setInterval(() => {
-    api.heartbeat().catch((err) => console.error('[Heartbeat] Gagal:', err.message));
-  }, 30000);
+  tray.setContextMenu(Menu.buildFromTemplate(template));
+  tray.setToolTip(`SnapSnap Print Agent — :${port}`);
 }
 
 app.whenReady().then(() => {
-  createTray();
-
-  if (store.get('token') && store.get('stationId')) {
-    startEngine();
-  } else {
-    createAuthWindow();
+  // Auto-start saat login (§3.6). packaged build saja — saat dev jangan daftarkan.
+  if (app.isPackaged) {
+    app.setLoginItemSettings({ openAtLogin: true });
   }
+
+  createTray();
+  startHttpServer();
+  openDsmartWindow(); // no-op kalau embeddedBrowserEnabled === false
 });
 
+// Jangan quit saat window ditutup — agent hidup di tray, HTTP server tetap
+// melayani Chrome. Di macOS default-nya juga tidak quit; di sini eksplisit.
 app.on('window-all-closed', (e) => e.preventDefault());
 
-// ── IPC handlers ─────────────────────────────────────────────────────────
-
-ipcMain.handle('auth:login', async (_event, { email, password }) => {
-  await api.login(email, password);
-  return true;
-});
-
-ipcMain.handle('auth:after-login', async () => {
-  authWindow?.close();
-  createSetupWindow();
-});
-
-ipcMain.handle('setup:list-events', async () => api.fetchActiveEvents());
-
-ipcMain.handle('setup:list-printers', async () => {
-  return setupWindow.webContents.getPrintersAsync();
-});
-
-ipcMain.handle('setup:complete', async (_event, { eventId, eventName, printerName }) => {
-  const station = await api.registerStation({
-    eventId,
-    name: os.hostname(),
-    printerName,
-  });
-  store.set('eventName', eventName);
-  refreshTrayMenu();
-  setupWindow?.close();
-  startEngine();
-  return station;
+app.on('second-instance', () => {
+  if (store.get('embeddedBrowserEnabled')) openDsmartWindow();
 });

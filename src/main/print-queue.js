@@ -1,21 +1,41 @@
-const path = require('path');
-const os = require('os');
-const fs = require('fs');
-const unzipper = require('unzipper');
-const api = require('./api-client');
+const crypto = require('crypto');
 const store = require('./config-store');
+
+/**
+ * Antrian print ZPL — 1 job at a time (docs/zd220-print-agent.md §2).
+ * Electron app "bodoh": terima byte ZPL dari HTTP server, teruskan ke adapter.
+ * Logika label (buildFruitZpl dsb) ada di repo dsmart, bukan di sini.
+ */
 
 const queue = [];
 let processing = false;
-let printerAdapter = null; // di-set Langkah F — sebelum itu, cuma log (aman buat develop di Ubuntu)
+let printerAdapter = null;
 
 function setPrinterAdapter(adapter) {
   printerAdapter = adapter;
 }
 
-function enqueue(job) {
-  queue.push(job);
-  processNext();
+/**
+ * @param {{ type: 'zpl', data: string, copies?: number, printer?: string }} job
+ * @returns {Promise<string>} jobId — 200 dari POST /print berarti job MASUK ANTRIAN,
+ *   bukan berarti kertas sudah keluar (RAW spooling = fire and forget, §4).
+ */
+function enqueuePrintJob(job) {
+  if (!job || job.type !== 'zpl') {
+    return Promise.reject(new Error('invalid_job: only { type: "zpl" } supported'));
+  }
+  if (typeof job.data !== 'string' || !job.data.trim()) {
+    return Promise.reject(new Error('invalid_zpl: field "data" is required'));
+  }
+
+  const jobId = crypto.randomBytes(4).toString('hex');
+  const printer = job.printer || store.get('defaultZplPrinter');
+  const copies = Number(job.copies) || 1;
+
+  return new Promise((resolve, reject) => {
+    queue.push({ jobId, zpl: job.data, printer, copies, resolve, reject });
+    processNext();
+  });
 }
 
 async function processNext() {
@@ -24,58 +44,36 @@ async function processNext() {
   const job = queue.shift();
 
   try {
-    await handleJob(job);
+    if (!printerAdapter) throw new Error('internal: printer adapter not set');
+    if (!job.printer) throw new Error('printer_not_found: no printer configured (set defaultZplPrinter or pass "printer")');
+
+    if (store.get('dryRun') && typeof printerAdapter.printRaw === 'function') {
+      console.log(`[Queue] dryRun — job ${job.jobId} tidak dikirim ke printer.`);
+    }
+
+    await printerAdapter.printRaw(job.zpl, { printer: job.printer, copies: job.copies });
+    console.log(`[Queue] Job ${job.jobId} → "${job.printer}" (${job.copies}x) OK.`);
+    job.resolve(job.jobId);
   } catch (err) {
-    console.error(`[Queue] Gagal proses print request #${job.print_request_id}:`, err.message);
+    console.error(`[Queue] Job ${job.jobId} gagal:`, err.message);
+    job.reject(err);
   } finally {
     processing = false;
-    processNext(); // 1 job at a time — job berikutnya baru diambil setelah ini kelar
+    processNext();
   }
 }
 
-async function handleJob(job) {
-  const printRequestId = job.print_request_id;
-
+/**
+ * Daftar printer terpasang (GET /health & GET /printers).
+ */
+async function listPrinters() {
+  if (!printerAdapter || typeof printerAdapter.listPrinters !== 'function') return [];
   try {
-    await api.claimPrintRequest(printRequestId);
-    console.log(`[Queue] Menang klaim print request #${printRequestId}.`);
+    return await printerAdapter.listPrinters();
   } catch (err) {
-    console.log(`[Queue] Kalah klaim print request #${printRequestId}, skip.`);
-    return;
-  }
-
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `print-${printRequestId}-`));
-  const zipPath = path.join(tmpDir, 'photos.zip');
-
-  await api.downloadZip(printRequestId, zipPath);
-
-  await fs.createReadStream(zipPath).pipe(unzipper.Extract({ path: tmpDir })).promise();
-
-  const files = fs.readdirSync(tmpDir)
-    .filter((f) => f !== 'photos.zip')
-    .map((f) => path.join(tmpDir, f));
-
-  if (files.length === 0) {
-    await api.reportStatus(printRequestId, 'failed', 'ZIP kosong / gagal extract.');
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    return;
-  }
-
-  await api.reportStatus(printRequestId, 'processing');
-
-  try {
-    if (printerAdapter) {
-      await printerAdapter.print(files, store.get('printerName'));
-    } else {
-      console.log(`[Queue] (stub, adapter belum dipasang) Akan print ${files.length} file:`, files);
-    }
-    await api.reportStatus(printRequestId, 'done');
-    console.log(`[Queue] Print request #${printRequestId} selesai.`);
-  } catch (err) {
-    await api.reportStatus(printRequestId, 'failed', err.message);
-  } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    console.error('[Queue] listPrinters gagal:', err.message);
+    return [];
   }
 }
 
-module.exports = { enqueue, setPrinterAdapter };
+module.exports = { setPrinterAdapter, enqueuePrintJob, listPrinters };

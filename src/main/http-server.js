@@ -1,0 +1,134 @@
+const http = require('node:http');
+const printQueue = require('./print-queue');
+const store = require('./config-store');
+const pkg = require('../../package.json');
+
+/**
+ * HTTP server loopback untuk local print agent (docs/zd220-print-agent.md §3.1).
+ *
+ * - Listen HANYA di 127.0.0.1 — tidak ada permukaan jaringan.
+ * - Route: GET /health, GET /printers, POST /print.
+ * - CORS + preflight OPTIONS wajib, jika tidak fetch dari halaman dsmart gagal.
+ * - Nol dependency (node:http).
+ */
+
+function setCors(res, origin) {
+  const allowed = store.get('allowedOrigins') ?? ['*'];
+  const ok = allowed.includes('*') || (origin && allowed.includes(origin));
+  res.setHeader('Access-Control-Allow-Origin', ok ? origin || '*' : allowed[0] || '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Max-Age', '600');
+  res.setHeader('Vary', 'Origin');
+}
+
+function sendJson(res, code, body) {
+  res.writeHead(code, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(body));
+}
+
+async function readBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+async function handleRequest(req, res) {
+  setCors(res, req.headers.origin);
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    return res.end();
+  }
+
+  const url = (req.url || '').split('?')[0];
+
+  try {
+    if (req.method === 'GET' && url === '/health') {
+      const printers = await printQueue.listPrinters();
+      return sendJson(res, 200, {
+        ok: true,
+        version: pkg.version,
+        defaultPrinter: store.get('defaultZplPrinter') ?? printers[0] ?? null,
+        dryRun: Boolean(store.get('dryRun')),
+        printers,
+      });
+    }
+
+    if (req.method === 'GET' && url === '/printers') {
+      return sendJson(res, 200, { printers: await printQueue.listPrinters() });
+    }
+
+    if (req.method === 'POST' && url === '/print') {
+      let body;
+      try {
+        body = JSON.parse((await readBody(req)) || '{}');
+      } catch {
+        return sendJson(res, 400, { error: 'invalid_json', message: 'body is not valid JSON' });
+      }
+
+      if (typeof body.zpl !== 'string' || !body.zpl.trim()) {
+        return sendJson(res, 400, { error: 'invalid_zpl', message: "field 'zpl' is required" });
+      }
+
+      const printer = body.printer || store.get('defaultZplPrinter');
+      try {
+        const jobId = await printQueue.enqueuePrintJob({
+          type: 'zpl',
+          data: body.zpl,
+          copies: Number(body.copies) || 1,
+          printer,
+        });
+        return sendJson(res, 200, { jobId, printer });
+      } catch (err) {
+        const msg = String(err?.message ?? err);
+        if (msg.startsWith('printer_not_found')) {
+          return sendJson(res, 404, { error: 'printer_not_found', message: msg });
+        }
+        if (msg.startsWith('invalid_zpl')) {
+          return sendJson(res, 400, { error: 'invalid_zpl', message: msg });
+        }
+        return sendJson(res, 500, { error: 'internal', message: msg });
+      }
+    }
+
+    return sendJson(res, 404, { error: 'not_found', message: url });
+  } catch (err) {
+    return sendJson(res, 500, { error: 'internal', message: String(err?.message ?? err) });
+  }
+}
+
+let server = null;
+
+function startHttpServer() {
+  if (server) return server;
+  const port = Number(store.get('printAgentPort')) || 9110;
+
+  server = http.createServer((req, res) => {
+    handleRequest(req, res).catch((err) => {
+      console.error('[print-agent] unhandled:', err);
+      try {
+        sendJson(res, 500, { error: 'internal', message: String(err?.message ?? err) });
+      } catch {
+        /* response sudah terkirim */
+      }
+    });
+  });
+
+  server.on('error', (err) => {
+    console.error(`[print-agent] server error (port ${port}):`, err.message);
+  });
+
+  server.listen(port, '127.0.0.1', () => {
+    console.log(`[print-agent] listening on http://127.0.0.1:${port}`);
+  });
+
+  return server;
+}
+
+function stopHttpServer() {
+  server?.close();
+  server = null;
+}
+
+module.exports = { startHttpServer, stopHttpServer };

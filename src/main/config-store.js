@@ -4,26 +4,38 @@ const Store = require('electron-store');
  * Persisted ke folder userData OS (di Windows: %APPDATA%/snapsnap-print-agent)
  * — bukan browser localStorage, ini file JSON biasa di disk, aman dipakai
  * di Electron main process.
+ *
+ * Agent ini murni print agent ZPL loopback untuk dsmart (lihat
+ * docs/zd220-print-agent.md). Config-nya flat, tanpa nested object.
  */
 const store = new Store({
   name: 'camera-print-agent-config',
   defaults: {
-    apiBaseUrl: 'https://snapsnap.app/api/admin',
-    token: null,
-    stationId: null,
-    eventId: null,
-    eventName: null,
-    printerName: null,
+    // ── HTTP server loopback (§2, §3.1) ────────────────────────────────
+    // Server hanya listen di 127.0.0.1 — tidak ada permukaan jaringan.
+    printAgentPort: 9110,
 
-    // Nilai ini HARUS sama persis dengan .env backend (REVERB_APP_KEY,
-    // REVERB_HOST, REVERB_PORT, REVERB_SCHEME). Kalau beda, koneksi
-    // Reverb akan gagal auth diam-diam (gak ada error jelas, cuma
-    // never-connect). Cek nilai asli di server sebelum lanjut checkpoint.
-    reverbKey: '08e50acad80c8a5d052ae8cda2e3af853a16b94a',
-    reverbHost: 'snapsnap.app',
-    reverbPort: 443,
-    reverbScheme: 'https',
-    authEndpoint: 'https://snapsnap.app/api/admin/broadcasting/auth',
+    // Nama printer PERSIS dari `Get-Printer` (mis. "ZDesigner ZD220-203dpi ZPL").
+    // Dipakai kalau body POST /print tidak menyertakan "printer".
+    defaultZplPrinter: null,
+
+    // Origin yang boleh fetch ke server (CORS, §4). ["*"] = izinkan semua —
+    // aman untuk loopback tanpa data sensitif. Perketat ke domain dsmart
+    // kalau mau: ["https://app.dsmart.co", "http://localhost:3000"].
+    allowedOrigins: ['*'],
+
+    // dryRun true → adapter TIDAK menyentuh printer, cuma tulis .zpl ke temp.
+    // Berguna saat dev di mesin tanpa printer. Di non-Windows selalu efektif
+    // dry-run karena adapter yang aktif = MockPrinterAdapter.
+    dryRun: false,
+
+    // ── BrowserWindow opsional untuk dsmart (§3.8) ─────────────────────
+    // "Chrome terkurung" — tetap fetch ke :9110, TANPA preload/IPC print.
+    // Aktifkan hanya untuk PC kiosk. Default: nonaktif → perilaku identik
+    // dengan agent tanpa window.
+    embeddedBrowserEnabled: false,
+    embeddedBrowserUrl: '',
+    embeddedBrowserKiosk: false,
   },
 });
 
