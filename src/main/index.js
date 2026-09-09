@@ -13,9 +13,11 @@ try {
 
 const store = require('./config-store');
 const printQueue = require('./print-queue');
-const { startHttpServer } = require('./http-server');
+const { startHttpServer, isListening } = require('./http-server');
 const { openDsmartWindow } = require('./browser-window');
 const { openSettingsWindow, closeSettingsWindow } = require('./settings-window');
+const { openHealthWindow, closeHealthWindow } = require('./health-window');
+const { healthDetail } = require('./health');
 const { initAutoUpdate, checkManually, getState: getUpdateState, promptInstall } = require('./auto-update');
 const MockPrinterAdapter = require('./printer/mock-printer-adapter');
 const WindowsPrinterAdapter = require('./printer/windows-printer-adapter');
@@ -65,8 +67,8 @@ function refreshTrayMenu() {
     { label: `Printer: ${printer}`, enabled: false },
     { type: 'separator' },
     {
-      label: 'Cek /health',
-      click: () => shell.openExternal(`http://127.0.0.1:${port}/health`),
+      label: 'Status Agent…',
+      click: () => openHealthWindow(),
     },
     {
       label: 'Salin URL agent',
@@ -155,6 +157,50 @@ ipcMain.handle('settings:test-print', async (_evt, name) => {
 
 ipcMain.handle('settings:close', () => {
   closeSettingsWindow();
+  return { ok: true };
+});
+
+// ── IPC untuk window "Status Agent" ───────────────────────────────────
+function sendTestLabel(printer) {
+  const stamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const zpl = `^XA^CI28^PW400^LL200^FO30,30^A0N,28,28^FDPrint Agent - tes cetak^FS^FO30,80^A0N,24,24^FD${printer}^FS^FO30,130^A0N,22,22^FD${stamp}^FS^XZ`;
+  return printQueue.enqueuePrintJob({ type: 'zpl', data: zpl, copies: 1, printer });
+}
+
+ipcMain.handle('health:load', () =>
+  healthDetail({
+    port: Number(store.get('printAgentPort')) || 9110,
+    serverListening: isListening(),
+    updateState: getUpdateState(),
+  })
+);
+
+ipcMain.handle('health:test-print', async () => {
+  const printer = store.get('defaultZplPrinter');
+  if (!printer) throw new Error('Belum ada printer tujuan — set di Pengaturan Printer.');
+  await sendTestLabel(printer);
+  return { ok: true, printer };
+});
+
+ipcMain.handle('health:open-raw', () => {
+  const port = Number(store.get('printAgentPort')) || 9110;
+  shell.openExternal(`http://127.0.0.1:${port}/health`);
+  return { ok: true };
+});
+
+ipcMain.handle('health:copy-url', () => {
+  const port = Number(store.get('printAgentPort')) || 9110;
+  clipboard.writeText(`http://127.0.0.1:${port}`);
+  return { ok: true };
+});
+
+ipcMain.handle('health:open-settings', () => {
+  openSettingsWindow();
+  return { ok: true };
+});
+
+ipcMain.handle('health:close', () => {
+  closeHealthWindow();
   return { ok: true };
 });
 

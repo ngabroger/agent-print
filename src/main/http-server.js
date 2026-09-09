@@ -1,7 +1,6 @@
 const http = require('node:http');
 const printQueue = require('./print-queue');
 const store = require('./config-store');
-const pkg = require('../../package.json');
 
 // Jalur cetak HTML — hanya tersedia di Windows (butuh BrowserWindow render).
 let htmlPrinter = null;
@@ -51,14 +50,7 @@ async function handleRequest(req, res) {
 
   try {
     if (req.method === 'GET' && url === '/health') {
-      const printers = await printQueue.listPrinters();
-      return sendJson(res, 200, {
-        ok: true,
-        version: pkg.version,
-        defaultPrinter: store.get('defaultZplPrinter') ?? printers[0] ?? null,
-        dryRun: Boolean(store.get('dryRun')),
-        printers,
-      });
+      return sendJson(res, 200, await require('./health').healthSummary());
     }
 
     if (req.method === 'GET' && url === '/printers') {
@@ -177,4 +169,8 @@ function stopHttpServer() {
   server = null;
 }
 
-module.exports = { startHttpServer, stopHttpServer };
+function isListening() {
+  return Boolean(server && server.listening);
+}
+
+module.exports = { startHttpServer, stopHttpServer, isListening };

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'self'" />
+  <title>Status Agent</title>
+  <style>
+    :root {
+      --bg: #f5f6f8;
+      --card: #ffffff;
+      --card-hover: #f0f4ff;
+      --border: #dfe2e8;
+      --border-strong: #c7ccd6;
+      --text: #1c1f26;
+      --muted: #6a7280;
+      --accent: #2563eb;
+      --accent-soft: #dbe6ff;
+      --accent-text: #ffffff;
+      --ok: #15803d;
+      --ok-soft: #dcfce7;
+      --warn: #b45309;
+      --warn-soft: #fef3c7;
+      --err: #b91c1c;
+      --err-soft: #fee2e2;
+      --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.05);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1a1b1e;
+        --card: #26282c;
+        --card-hover: #2d3242;
+        --border: #383b42;
+        --border-strong: #4a4e57;
+        --text: #e9ebee;
+        --muted: #9aa0ab;
+        --accent: #4785f4;
+        --accent-soft: #24304a;
+        --ok: #4ade80;
+        --ok-soft: #16311f;
+        --warn: #fbbf24;
+        --warn-soft: #3a2f13;
+        --err: #f87171;
+        --err-soft: #3a1d1d;
+        --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.35);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font: 13.5px/1.55 -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── hero header: ringkasan status ──────────────────── */
+    header {
+      padding: 18px 20px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--card);
+    }
+    .hero { display: flex; align-items: center; gap: 14px; }
+    .beacon {
+      width: 44px; height: 44px; border-radius: 50%; flex: none;
+      display: grid; place-items: center;
+      position: relative;
+    }
+    .beacon .ring {
+      position: absolute; inset: 0; border-radius: 50%;
+      border: 2px solid currentColor; opacity: .3;
+      animation: pulse 2s ease-out infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(.7); opacity: .5; }
+      100% { transform: scale(1.35); opacity: 0; }
+    }
+    .beacon svg { width: 22px; height: 22px; }
+    .beacon.ok { color: var(--ok); background: var(--ok-soft); }
+    .beacon.warn { color: var(--warn); background: var(--warn-soft); }
+    .beacon.err { color: var(--err); background: var(--err-soft); }
+    .beacon.loading { color: var(--muted); background: var(--bg); }
+    .beacon.loading .ring { animation: none; }
+    .beacon.loading svg { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .hero-txt { flex: 1; min-width: 0; }
+    .hero-txt h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+    .hero-txt .line { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+    .hero-txt .line b { color: var(--text); font-weight: 600; }
+
+    .autoref {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; color: var(--muted); margin-top: 10px;
+    }
+    .autoref .tick { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); animation: blink 2s infinite; }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+
+    /* ── body ──────────────────────────────────────────── */
+    main { flex: 1; overflow-y: auto; padding: 14px 20px; }
+    .sec-label {
+      font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+      color: var(--muted); margin: 4px 2px 8px;
+    }
+    section + section { margin-top: 18px; }
+
+    /* checklist */
+    ul.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+    li.check {
+      display: flex; align-items: center; gap: 11px;
+      background: var(--card); border: 1.5px solid var(--border);
+      border-radius: 10px; padding: 10px 13px;
+      animation: slidein .28s ease both;
+    }
+    @keyframes slidein { from { opacity: 0; transform: translateY(4px); } }
+    li.check .mark {
+      width: 20px; height: 20px; border-radius: 50%; flex: none;
+      display: grid; place-items: center;
+    }
+    li.check .mark svg { width: 12px; height: 12px; }
+    li.check.ok .mark { background: var(--ok-soft); color: var(--ok); }
+    li.check.warn .mark { background: var(--warn-soft); color: var(--warn); }
+    li.check.err .mark { background: var(--err-soft); color: var(--err); }
+    li.check .c-body { flex: 1; min-width: 0; }
+    li.check .c-label { font-weight: 600; font-size: 12.5px; }
+    li.check .c-detail {
+      font-size: 11.5px; color: var(--muted); margin-top: 1px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    li.check.err { border-color: color-mix(in srgb, var(--err) 35%, var(--border)); }
+
+    /* info grid */
+    .infogrid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+      background: var(--border); border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden;
+    }
+    .infogrid .cell { background: var(--card); padding: 9px 12px; }
+    .infogrid .k { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .infogrid .v { font-size: 12.5px; font-weight: 600; margin-top: 2px; word-break: break-all; }
+    .infogrid .v.mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-weight: 500; }
+    .infogrid .cell.wide { grid-column: 1 / -1; }
+    .infogrid .cell.link { cursor: pointer; }
+    .infogrid .cell.link:hover { background: var(--card-hover); }
+
+    /* printers mini list */
+    ul.plist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+    li.pr {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 9px; padding: 8px 12px;
+    }
+    li.pr .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+    li.pr .dot.ready { background: var(--ok); }
+    li.pr .dot.offline { background: var(--warn); }
+    li.pr .dot.error { background: var(--err); }
+    li.pr .dot.unknown { background: var(--muted); }
+    li.pr .pn { flex: 1; min-width: 0; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    li.pr .tag {
+      font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+      background: var(--accent); color: var(--accent-text); flex: none;
+    }
+    li.pr .tag.def { background: var(--bg); color: var(--muted); border: 1px solid var(--border-strong); }
+
+    .empty { text-align: center; color: var(--muted); padding: 20px; font-size: 12px;
+      border: 1.5px dashed var(--border-strong); border-radius: 10px; }
+
+    /* ── footer ─────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border); background: var(--card);
+      padding: 12px 20px; display: flex; align-items: center; gap: 9px;
+    }
+    .spacer { flex: 1; }
+    button {
+      font: inherit; font-weight: 600; font-size: 12.5px;
+      border-radius: 8px; border: 1px solid var(--border-strong);
+      padding: 8px 14px; background: var(--card); color: var(--text);
+      cursor: pointer; transition: background .12s, opacity .12s;
+      display: inline-flex; align-items: center; gap: 7px;
+    }
+    button:hover:not(:disabled) { background: var(--card-hover); }
+    button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+    button.primary:hover:not(:disabled) { background: #1d4fd0; }
+    button.ghost { border-color: transparent; background: transparent; }
+    button.ghost:hover:not(:disabled) { background: var(--card-hover); }
+    button:disabled { opacity: .5; cursor: default; }
+    button.busy .spin { display: inline-block; }
+    .spin {
+      display: none; width: 13px; height: 13px; border-radius: 50%;
+      border: 2px solid currentColor; border-top-color: transparent;
+      animation: spin .7s linear infinite;
+    }
+    .icon-btn { padding: 8px; }
+
+    #toast {
+      position: fixed; left: 50%; bottom: 66px; transform: translateX(-50%) translateY(12px);
+      background: var(--text); color: var(--bg);
+      font-size: 12.5px; font-weight: 500;
+      padding: 9px 16px; border-radius: 9px; box-shadow: var(--shadow);
+      opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+      max-width: 90%; text-align: center;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #toast.err { background: var(--err); color: #fff; }
+    #toast.ok { background: var(--ok); color: #fff; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="hero">
+      <div class="beacon loading" id="beacon">
+        <span class="ring"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>
+      </div>
+      <div class="hero-txt">
+        <h1 id="heroTitle">Memeriksa status…</h1>
+        <div class="line" id="heroLine">Print Agent</div>
+      </div>
+      <button class="icon-btn ghost" id="refresh" title="Refresh (Ctrl+R)">
+        <span class="spin"></span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+      </button>
+    </div>
+    <div class="autoref" id="autoref" hidden><span class="tick"></span> auto-refresh tiap 5 dtk</div>
+  </header>
+
+  <main>
+    <section>
+      <div class="sec-label">Pemeriksaan</div>
+      <ul class="checks" id="checks"></ul>
+    </section>
+
+    <section>
+      <div class="sec-label">Runtime</div>
+      <div class="infogrid" id="info"></div>
+    </section>
+
+    <section>
+      <div class="sec-label">Printer terpasang <span id="prCount" style="color:var(--muted);font-weight:400"></span></div>
+      <ul class="plist" id="printers"></ul>
+    </section>
+  </main>
+
+  <footer>
+    <button id="settings">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.31.22.65.22 1s-.08.69-.22 1z"/></svg>
+      Pengaturan
+    </button>
+    <button class="ghost" id="raw">JSON mentah</button>
+    <div class="spacer"></div>
+    <button id="test">
+      <span class="spin"></span>
+      Tes cetak
+    </button>
+  </footer>
+
+  <div id="toast"></div>
+  <script src="health.js"></script>
+</body>
+</html>

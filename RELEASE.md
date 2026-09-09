@@ -27,16 +27,29 @@ Menu tray `Cek update` = cek manual (kasih dialog kalau sudah terbaru).
 
 ### Cara cepat — satu perintah
 
-```bash
-export GH_TOKEN=ghp_xxxxxxxx      # sekali per sesi (atau setx permanen)
-npm run release:auto              # default: bump patch
-npm run release:auto minor        # atau: minor / major / 1.2.3
+Set token dulu (sekali per sesi terminal — atau `setx` sekali untuk permanen):
+
+```cmd
+:: Command Prompt
+set GH_TOKEN=ghp_xxxxxxxx
+```
+```powershell
+# PowerShell
+$env:GH_TOKEN = "ghp_xxxxxxxx"
 ```
 
-`scripts/release.sh` menjalankan semua langkah di bawah otomatis:
+Lalu:
+
+```cmd
+npm run release:auto              :: default: bump patch
+npm run release:auto -- minor     :: atau: minor / major / 1.2.3
+```
+
+`scripts/release.js` (Node murni — jalan di CMD / PowerShell / bash, tidak
+perlu `bash`) menjalankan semua langkah di bawah otomatis:
 cek prasyarat → `npm version` → build → upload → `git push` → publish draft
 (publish otomatis kalau `gh` CLI login; kalau tidak, dikasih link manual).
-Kalau build/upload gagal, bump versi lokal di-rollback.
+Kalau build/upload/push gagal, bump versi lokal di-rollback.
 
 ---
 
