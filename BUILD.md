@@ -43,7 +43,7 @@ npm run pack        # → dist\win-unpacked\Print Agent.exe
 | Item | Dari | Catatan |
 | --- | --- | --- |
 | Kode agent | `src/**` (kecuali `*.bak`) | di-bundle ke `app.asar` |
-| `assets/tray-icon.png` | `assets/**` | ikon tray |
+| `assets/tray-icon.ico` | `assets/**` | ikon tray (salinan `build/icon.ico`) |
 | `print-raw.ps1` | `asarUnpack` | di-unpack ke `app.asar.unpacked\...` supaya PowerShell bisa `-File` |
 | `.env.example` | `extraResources` | disalin ke `resources\.env.example` sebagai contoh |
 

@@ -82,6 +82,55 @@ class WindowsPrinterAdapter {
       );
     });
   }
+
+  /**
+   * Versi detail untuk UI Settings: nama + status + default OS + tipe koneksi.
+   * status: 'ready' | 'offline' | 'error' | 'unknown' (dipetakan dari
+   * PrinterStatus WMI). isDefault hanya info tampilan — agent TIDAK memakainya.
+   */
+  async listPrintersDetailed() {
+    const ps =
+      "$d=(Get-CimInstance Win32_Printer | Where-Object Default -eq $true).Name; " +
+      "Get-Printer | ForEach-Object { [pscustomobject]@{ " +
+      "name=$_.Name; status=[string]$_.PrinterStatus; " +
+      "isDefault=($_.Name -eq $d); type=[string]$_.Type; portName=$_.PortName " +
+      "} } | ConvertTo-Json -Compress -Depth 3";
+
+    return new Promise((resolve, reject) => {
+      execFile(
+        'powershell.exe',
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps],
+        { windowsHide: true, timeout: 15000 },
+        (err, stdout, stderr) => {
+          if (err) return reject(new Error(stderr || err.message));
+          let raw;
+          try {
+            raw = JSON.parse(stdout.trim() || '[]');
+          } catch {
+            return reject(new Error('Gagal parse daftar printer.'));
+          }
+          const arr = Array.isArray(raw) ? raw : [raw];
+          resolve(arr.filter(Boolean).map((p) => ({
+            name: p.name,
+            status: mapStatus(p.status),
+            rawStatus: p.status || '',
+            isDefault: Boolean(p.isDefault),
+            type: p.type || '',
+            portName: p.portName || '',
+          })));
+        }
+      );
+    });
+  }
+}
+
+// PrinterStatus (MSFT_Printer) → label ringkas untuk UI.
+function mapStatus(s) {
+  const v = String(s || '').toLowerCase();
+  if (v === 'normal' || v === 'idle' || v === '3') return 'ready';
+  if (v.includes('offline') || v === '7') return 'offline';
+  if (v.includes('error') || v.includes('paused') || v.includes('jam') || v.includes('paper')) return 'error';
+  return 'unknown';
 }
 
 module.exports = WindowsPrinterAdapter;

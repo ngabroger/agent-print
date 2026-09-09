@@ -76,4 +76,20 @@ async function listPrinters() {
   }
 }
 
-module.exports = { setPrinterAdapter, enqueuePrintJob, listPrinters };
+/**
+ * Daftar printer + metadata (status, default OS, tipe) untuk UI Settings.
+ * Fallback ke listPrinters() kalau adapter belum punya versi detail.
+ */
+async function listPrintersDetailed() {
+  if (printerAdapter && typeof printerAdapter.listPrintersDetailed === 'function') {
+    try {
+      return await printerAdapter.listPrintersDetailed();
+    } catch (err) {
+      console.error('[Queue] listPrintersDetailed gagal:', err.message);
+    }
+  }
+  const names = await listPrinters();
+  return names.map((name) => ({ name, status: 'unknown', rawStatus: '', isDefault: false, type: '', portName: '' }));
+}
+
+module.exports = { setPrinterAdapter, enqueuePrintJob, listPrinters, listPrintersDetailed };

@@ -2,104 +2,252 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'self'" />
   <title>Pengaturan Printer</title>
   <style>
     :root {
-      --bg: #f4f5f7;
+      --bg: #f5f6f8;
       --card: #ffffff;
-      --border: #d6d9de;
-      --text: #1d2129;
-      --muted: #6b7280;
+      --card-hover: #f0f4ff;
+      --border: #dfe2e8;
+      --border-strong: #c7ccd6;
+      --text: #1c1f26;
+      --muted: #6a7280;
       --accent: #2563eb;
+      --accent-soft: #dbe6ff;
       --accent-text: #ffffff;
       --ok: #15803d;
+      --ok-soft: #dcfce7;
+      --warn: #b45309;
+      --warn-soft: #fef3c7;
       --err: #b91c1c;
+      --err-soft: #fee2e2;
+      --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.05);
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #1e1f22;
-        --card: #2b2d31;
-        --border: #3a3d43;
-        --text: #e8eaed;
-        --muted: #9aa0a6;
-        --accent: #3b82f6;
+        --bg: #1a1b1e;
+        --card: #26282c;
+        --card-hover: #2d3242;
+        --border: #383b42;
+        --border-strong: #4a4e57;
+        --text: #e9ebee;
+        --muted: #9aa0ab;
+        --accent: #4785f4;
+        --accent-soft: #24304a;
+        --ok: #4ade80;
+        --ok-soft: #16311f;
+        --warn: #fbbf24;
+        --warn-soft: #3a2f13;
+        --err: #f87171;
+        --err-soft: #3a1d1d;
+        --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.35);
       }
     }
+
     * { box-sizing: border-box; }
+    html, body { height: 100%; }
     body {
       margin: 0;
-      padding: 20px;
-      font: 14px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+      font: 13.5px/1.55 -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
-    }
-    h1 { font-size: 16px; margin: 0 0 4px; }
-    p.sub { margin: 0 0 16px; color: var(--muted); font-size: 12px; }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px;
-    }
-    label { display: block; font-weight: 600; margin-bottom: 6px; }
-    .row { display: flex; gap: 8px; align-items: center; }
-    select, button {
-      font: inherit;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      padding: 8px 10px;
-      background: var(--card);
-      color: var(--text);
-    }
-    select { flex: 1; }
-    button {
-      cursor: pointer;
-      background: var(--card);
-      white-space: nowrap;
-    }
-    button.primary {
-      background: var(--accent);
-      color: var(--accent-text);
-      border-color: var(--accent);
-    }
-    button:disabled { opacity: .5; cursor: default; }
-    .actions {
       display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      margin-top: 16px;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
     }
-    .hint { margin-top: 10px; font-size: 12px; color: var(--muted); }
-    #status { margin-top: 12px; font-size: 13px; min-height: 18px; }
-    #status.ok { color: var(--ok); }
-    #status.err { color: var(--err); }
+
+    /* ── header ─────────────────────────────────────────── */
+    header {
+      padding: 16px 20px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--card);
+    }
+    .title-row { display: flex; align-items: center; gap: 10px; }
+    .title-row h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+    .agent-pill {
+      margin-left: auto;
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 11.5px; color: var(--muted);
+      background: var(--bg); border: 1px solid var(--border);
+      padding: 3px 9px; border-radius: 999px;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+    .dot.live { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+    .dot.down { background: var(--err); box-shadow: 0 0 0 3px var(--err-soft); }
+    header p.sub { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+
+    /* ── body / list ────────────────────────────────────── */
+    main { flex: 1; overflow-y: auto; padding: 14px 20px; }
+    .toolbar {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+    }
+    .search {
+      flex: 1; position: relative;
+    }
+    .search input {
+      width: 100%; font: inherit; color: var(--text);
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 7px 10px 7px 30px;
+    }
+    .search input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+    .search svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); opacity: .45; }
+    .count { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+
+    ul.plist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+    li.pcard {
+      display: flex; align-items: center; gap: 11px;
+      background: var(--card); border: 1.5px solid var(--border);
+      border-radius: 10px; padding: 11px 13px;
+      cursor: pointer; transition: border-color .12s, background .12s, transform .06s;
+      user-select: none;
+    }
+    li.pcard:hover { background: var(--card-hover); border-color: var(--border-strong); }
+    li.pcard:active { transform: scale(.995); }
+    li.pcard.selected {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      box-shadow: var(--shadow);
+    }
+    li.pcard .radio {
+      width: 18px; height: 18px; border-radius: 50%; flex: none;
+      border: 2px solid var(--border-strong); position: relative; transition: border-color .12s;
+    }
+    li.pcard.selected .radio { border-color: var(--accent); }
+    li.pcard.selected .radio::after {
+      content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--accent);
+    }
+    .pcard .info { flex: 1; min-width: 0; }
+    .pcard .name {
+      font-weight: 600; font-size: 13px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .pcard .meta { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+    .badges { display: flex; gap: 5px; flex: none; flex-wrap: wrap; justify-content: flex-end; max-width: 45%; }
+    .badge {
+      font-size: 10.5px; font-weight: 600; letter-spacing: .01em;
+      padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+      border: 1px solid transparent;
+    }
+    .badge.ready { background: var(--ok-soft); color: var(--ok); }
+    .badge.offline { background: var(--warn-soft); color: var(--warn); }
+    .badge.error { background: var(--err-soft); color: var(--err); }
+    .badge.unknown { background: var(--bg); color: var(--muted); border-color: var(--border); }
+    .badge.default { background: var(--bg); color: var(--muted); border-color: var(--border-strong); }
+    .badge.chosen { background: var(--accent); color: var(--accent-text); }
+
+    .empty {
+      text-align: center; color: var(--muted); padding: 34px 16px; font-size: 12.5px;
+      border: 1.5px dashed var(--border-strong); border-radius: 10px;
+    }
+    .empty svg { opacity: .35; margin-bottom: 8px; }
+
+    /* "tidak diset" option */
+    li.pcard.none-opt .name { font-style: italic; color: var(--muted); font-weight: 500; }
+
+    /* ── footer ─────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      background: var(--card);
+      padding: 12px 20px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .drybox { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
+    .switch {
+      width: 34px; height: 19px; border-radius: 999px; background: var(--border-strong);
+      position: relative; transition: background .15s; flex: none;
+    }
+    .switch::after {
+      content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px;
+      border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 3px rgba(0,0,0,.3);
+    }
+    .drybox.on .switch { background: var(--warn); }
+    .drybox.on .switch::after { transform: translateX(15px); }
+
+    .spacer { flex: 1; }
+    button {
+      font: inherit; font-weight: 600; font-size: 12.5px;
+      border-radius: 8px; border: 1px solid var(--border-strong);
+      padding: 8px 14px; background: var(--card); color: var(--text);
+      cursor: pointer; transition: background .12s, opacity .12s;
+      display: inline-flex; align-items: center; gap: 7px;
+    }
+    button:hover:not(:disabled) { background: var(--card-hover); }
+    button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+    button.primary:hover:not(:disabled) { background: #1d4fd0; }
+    button.ghost { border-color: transparent; background: transparent; }
+    button.ghost:hover:not(:disabled) { background: var(--card-hover); }
+    button:disabled { opacity: .5; cursor: default; }
+    button.busy .spin { display: inline-block; }
+    .spin {
+      display: none; width: 13px; height: 13px; border-radius: 50%;
+      border: 2px solid currentColor; border-top-color: transparent;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .icon-btn { padding: 8px; }
+
+    /* ── toast ──────────────────────────────────────────── */
+    #toast {
+      position: fixed; left: 50%; bottom: 66px; transform: translateX(-50%) translateY(12px);
+      background: var(--text); color: var(--bg);
+      font-size: 12.5px; font-weight: 500;
+      padding: 9px 16px; border-radius: 9px; box-shadow: var(--shadow);
+      opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+      max-width: 90%; text-align: center;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #toast.err { background: var(--err); color: #fff; }
+    #toast.ok { background: var(--ok); color: #fff; }
   </style>
 </head>
 <body>
-  <h1>Pengaturan Printer</h1>
-  <p class="sub">Pilih printer ZPL yang dipakai Print Agent. Tidak memakai default printer Windows.</p>
-
-  <div class="card">
-    <label for="printer">Printer tujuan</label>
-    <div class="row">
-      <select id="printer">
-        <option value="">Memuat daftar printer…</option>
-      </select>
-      <button id="refresh" title="Muat ulang daftar printer">↻</button>
+  <header>
+    <div class="title-row">
+      <h1>Pengaturan Printer</h1>
+      <span class="agent-pill" id="agentPill" title="Status Print Agent">
+        <span class="dot" id="agentDot"></span>
+        <span id="agentText">memeriksa…</span>
+      </span>
     </div>
-    <p class="hint" id="hint">Daftar diambil dari <code>Get-Printer</code> Windows.</p>
+    <p class="sub">Pilih printer ZPL tujuan. Print Agent <b>tidak</b> memakai default printer Windows &mdash; kalau tidak dipilih, job yang tak menyebut printer akan ditolak.</p>
+  </header>
 
-    <div class="actions">
-      <button id="test">Tes cetak</button>
-      <div class="row">
-        <button id="cancel">Batal</button>
-        <button id="save" class="primary">Simpan</button>
+  <main>
+    <div class="toolbar">
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search" type="text" placeholder="Cari printer…" autocomplete="off" spellcheck="false" />
       </div>
+      <span class="count" id="count"></span>
+      <button class="icon-btn ghost" id="refresh" title="Muat ulang daftar (Ctrl+R)">
+        <span class="spin"></span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+      </button>
     </div>
 
-    <div id="status"></div>
-  </div>
+    <ul class="plist" id="plist"></ul>
+  </main>
+
+  <footer>
+    <div class="drybox" id="drybox" title="Dry-run: ZPL ditulis ke file temp, tidak dikirim ke printer">
+      <span class="switch"></span>
+      <span>Dry-run</span>
+    </div>
+    <div class="spacer"></div>
+    <button id="test">
+      <span class="spin"></span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
+      Tes cetak
+    </button>
+    <button class="primary" id="save">
+      <span class="spin"></span>
+      Simpan
+    </button>
+  </footer>
+
+  <div id="toast"></div>
 
   <script src="settings.js"></script>
 </body>

@@ -21,6 +21,14 @@ class MockPrinterAdapter {
   async listPrinters() {
     return ['Mock ZD220 (dev)', 'Microsoft Print to PDF'];
   }
+
+  async listPrintersDetailed() {
+    return [
+      { name: 'Mock ZD220 (dev)', status: 'ready', rawStatus: 'Normal', isDefault: false, type: 'Local', portName: 'MOCK:' },
+      { name: 'Microsoft Print to PDF', status: 'ready', rawStatus: 'Normal', isDefault: true, type: 'Local', portName: 'PORTPROMPT:' },
+      { name: 'Zebra ZD220 (offline)', status: 'offline', rawStatus: 'Offline', isDefault: false, type: 'Local', portName: 'USB001' },
+    ];
+  }
 }
 
 module.exports = MockPrinterAdapter;

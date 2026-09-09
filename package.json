@@ -9,11 +9,13 @@
     "start": "electron . --no-sandbox",
     "dist": "electron-builder --win --x64 && node scripts/pack-installer-zip.js",
     "dist:exe": "electron-builder --win --x64",
+    "release": "electron-builder --win --x64 --publish always",
     "zip": "node scripts/pack-installer-zip.js",
     "pack": "electron-builder --dir"
   },
   "dependencies": {
-    "electron-store": "^8.2.0"
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "archiver": "^5.3.2",
@@ -41,6 +43,13 @@
       {
         "from": ".env.example",
         "to": ".env.example"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ngabroger",
+        "repo": "agent-print"
       }
     ],
     "win": {

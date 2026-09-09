@@ -16,6 +16,7 @@ const printQueue = require('./print-queue');
 const { startHttpServer } = require('./http-server');
 const { openDsmartWindow } = require('./browser-window');
 const { openSettingsWindow, closeSettingsWindow } = require('./settings-window');
+const { initAutoUpdate, checkManually, getState: getUpdateState, promptInstall } = require('./auto-update');
 const MockPrinterAdapter = require('./printer/mock-printer-adapter');
 const WindowsPrinterAdapter = require('./printer/windows-printer-adapter');
 
@@ -44,7 +45,7 @@ if (!app.requestSingleInstanceLock()) {
 
 function createTray() {
   try {
-    tray = new Tray(path.join(__dirname, '../../assets/tray-icon.png'));
+    tray = new Tray(path.join(__dirname, '../../assets/tray-icon.ico'));
     refreshTrayMenu();
   } catch (err) {
     console.error('[Agent] Gagal load tray icon, app tetap jalan tanpa tray:', err.message);
@@ -57,9 +58,10 @@ function refreshTrayMenu() {
   const port = Number(store.get('printAgentPort')) || 9110;
   const printer = store.get('defaultZplPrinter') || '(belum diset)';
   const dryRun = store.get('dryRun') ? ' [dryRun]' : '';
+  const upd = getUpdateState();
 
   const template = [
-    { label: `Print agent: http://127.0.0.1:${port}${dryRun}`, enabled: false },
+    { label: `Print Agent v${app.getVersion()} — :${port}${dryRun}`, enabled: false },
     { label: `Printer: ${printer}`, enabled: false },
     { type: 'separator' },
     {
@@ -81,6 +83,21 @@ function refreshTrayMenu() {
     template.push({ label: 'Buka dsmart', click: () => openDsmartWindow() });
   }
 
+  // ── Update ──────────────────────────────────────────────
+  template.push({ type: 'separator' });
+  if (upd.summary) {
+    template.push({ label: upd.summary, enabled: false });
+  }
+  if (upd.status === 'downloaded') {
+    template.push({ label: 'Restart & pasang update sekarang', click: () => promptInstall() });
+  } else {
+    template.push({
+      label: 'Cek update',
+      enabled: upd.status !== 'checking' && upd.status !== 'downloading',
+      click: () => checkManually(),
+    });
+  }
+
   template.push({ type: 'separator' }, { label: 'Keluar', role: 'quit' });
 
   tray.setContextMenu(Menu.buildFromTemplate(template));
@@ -93,10 +110,18 @@ function refreshTrayMenu() {
 // print-queue saat job tidak menyertakan field "printer".
 
 ipcMain.handle('settings:load', async () => {
-  const printers = await printQueue.listPrinters();
+  const printers = await printQueue.listPrintersDetailed();
+  const port = Number(store.get('printAgentPort')) || 9110;
   return {
-    printers,
+    printers, // [{ name, status, rawStatus, isDefault, type, portName }]
     selectedPrinter: store.get('defaultZplPrinter') || null,
+    agent: {
+      port,
+      url: `http://127.0.0.1:${port}`,
+      dryRun: Boolean(store.get('dryRun')),
+      platform: process.platform,
+      version: app.getVersion(),
+    },
   };
 });
 
@@ -106,6 +131,14 @@ ipcMain.handle('settings:set-printer', (_evt, name) => {
   console.log(`[Agent] Printer tujuan diubah lewat Settings → ${value ?? '(tidak diset)'}`);
   refreshTrayMenu();
   return { ok: true, selectedPrinter: value };
+});
+
+ipcMain.handle('settings:set-dry-run', (_evt, on) => {
+  const value = Boolean(on);
+  store.set('dryRun', value);
+  console.log(`[Agent] dryRun diubah lewat Settings → ${value}`);
+  refreshTrayMenu();
+  return { ok: true, dryRun: value };
 });
 
 ipcMain.handle('settings:test-print', async (_evt, name) => {
@@ -134,6 +167,9 @@ app.whenReady().then(() => {
   createTray();
   startHttpServer();
   openDsmartWindow(); // no-op kalau embeddedBrowserEnabled === false
+
+  // Auto-update dari GitHub Releases — refresh menu tray tiap status berubah.
+  initAutoUpdate({ onStateChange: refreshTrayMenu });
 });
 
 // Jangan quit saat window ditutup — agent hidup di tray, HTTP server tetap

@@ -32,6 +32,7 @@ function openDsmartWindow() {
     width: 1280,
     height: 800,
     kiosk: Boolean(store.get('embeddedBrowserKiosk')),
+    icon: require('path').join(__dirname, '../../assets/tray-icon.ico'),
     autoHideMenuBar: true,
     webPreferences: {
       // default aman: context isolation on, node integration off, webSecurity on.

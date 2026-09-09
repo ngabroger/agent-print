@@ -16,20 +16,28 @@ function openSettingsWindow() {
   }
 
   win = new BrowserWindow({
-    width: 480,
-    height: 380,
-    resizable: false,
+    width: 520,
+    height: 560,
+    minWidth: 460,
+    minHeight: 440,
+    resizable: true,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
     title: 'Pengaturan Printer',
+    icon: path.join(__dirname, '../../assets/tray-icon.ico'),
     autoHideMenuBar: true,
+    backgroundColor: '#1a1b1e',
+    show: false,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       preload: path.join(__dirname, '../preload/settings-preload.js'),
     },
   });
+
+  // Hindari flash putih saat load — tampilkan setelah siap.
+  win.once('ready-to-show', () => win.show());
 
   win.setMenuBarVisibility(false);
   win.loadFile(path.join(__dirname, '../renderer/settings.html'));
