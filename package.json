@@ -10,6 +10,7 @@
     "dist": "electron-builder --win --x64 && node scripts/pack-installer-zip.js",
     "dist:exe": "electron-builder --win --x64",
     "release": "electron-builder --win --x64 --publish always",
+    "release:auto": "bash scripts/release.sh",
     "zip": "node scripts/pack-installer-zip.js",
     "pack": "electron-builder --dir"
   },

@@ -25,6 +25,23 @@ Menu tray `Cek update` = cek manual (kasih dialog kalau sudah terbaru).
 
 ## Cara rilis versi baru (kamu / maintainer)
 
+### Cara cepat — satu perintah
+
+```bash
+export GH_TOKEN=ghp_xxxxxxxx      # sekali per sesi (atau setx permanen)
+npm run release:auto              # default: bump patch
+npm run release:auto minor        # atau: minor / major / 1.2.3
+```
+
+`scripts/release.sh` menjalankan semua langkah di bawah otomatis:
+cek prasyarat → `npm version` → build → upload → `git push` → publish draft
+(publish otomatis kalau `gh` CLI login; kalau tidak, dikasih link manual).
+Kalau build/upload gagal, bump versi lokal di-rollback.
+
+---
+
+### Cara manual (langkah per langkah)
+
 ### 1. Naikkan versi
 
 ```powershell
