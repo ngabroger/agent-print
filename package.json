@@ -1,7 +1,7 @@
 {
   "name": "print-agent",
   "productName": "Print Agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local print agent ZPL loopback untuk dsmart (Zebra ZD220)",
   "author": "dsmart",
   "main": "src/main/index.js",
